@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Db } from "mongodb";
-import { anthropic, CLAUDE_MODEL } from "./anthropic";
+import { anthropic, CLAUDE_VOICE_MODEL } from "./anthropic";
 import { TOOL_DEFINITIONS, executeTool } from "./tools";
 import { todayInBusinessTz, nowInBusinessTz } from "./dates";
 import type { StepTimer } from "./timing";
@@ -29,7 +29,7 @@ export async function runAgentLoop(
 
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
     const response = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
+      model: CLAUDE_VOICE_MODEL,
       max_tokens: 400,
       system,
       tools: TOOL_DEFINITIONS,
