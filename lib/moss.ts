@@ -1,20 +1,27 @@
-import { MossClient } from "@moss-dev/moss";
+// Moss uses N-API native bindings via @moss-dev/moss-core. To avoid loading the
+// binding at build time (which fails on Vercel's "collect page data" step with
+// "Cannot find native binding"), the SDK is imported dynamically inside functions
+// that actually need to talk to Moss. Types are imported as type-only so the
+// erased import doesn't pull the module in.
+
+import type { MossClient as MossClientType } from "@moss-dev/moss";
 import type { Business } from "./types";
 
 const projectId = process.env.MOSS_PROJECT_ID;
 const projectKey = process.env.MOSS_PROJECT_KEY;
 
-let client: MossClient | null = null;
+let client: MossClientType | null = null;
 
 export function isMossConfigured(): boolean {
   return !!projectId && !!projectKey;
 }
 
-function getClient(): MossClient {
+async function getClient(): Promise<MossClientType> {
   if (client) return client;
   if (!projectId || !projectKey) {
     throw new Error("MOSS_PROJECT_ID and MOSS_PROJECT_KEY are required");
   }
+  const { MossClient } = await import("@moss-dev/moss");
   client = new MossClient(projectId, projectKey);
   return client;
 }
@@ -47,7 +54,6 @@ export function chunkMarkdown(markdown: string, maxChars = 800, overlap = 100): 
       for (const s of sentences) {
         if ((buf + " " + s).trim().length > maxChars && buf) {
           chunks.push(buf.trim());
-          // overlap: keep tail of last chunk
           buf = buf.slice(-overlap) + " " + s;
         } else {
           buf = buf ? buf + " " + s : s;
@@ -66,7 +72,7 @@ export function chunkMarkdown(markdown: string, maxChars = 800, overlap = 100): 
   }
   if (current.trim()) chunks.push(current.trim());
 
-  return chunks.slice(0, 200); // hard cap, websiteMarkdown is already truncated to 10K
+  return chunks.slice(0, 200);
 }
 
 /** Create (or recreate) a Moss index for one business. Returns number of chunks indexed. */
@@ -85,7 +91,7 @@ export async function indexBusinessWebsite(business: Pick<Business, "_id" | "web
   }));
 
   const indexName = indexNameFor(business._id.toString());
-  const c = getClient();
+  const c = await getClient();
 
   // Recreate if it already exists.
   try {
@@ -113,7 +119,8 @@ export async function searchBusinessInfo(
   const indexName = indexNameFor(business._id.toString());
 
   try {
-    const result = await getClient().query(indexName, query, { topK });
+    const c = await getClient();
+    const result = await c.query(indexName, query, { topK });
     if (!result.docs || result.docs.length === 0) {
       return "No relevant information found on the website.";
     }
