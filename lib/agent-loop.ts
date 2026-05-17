@@ -59,14 +59,15 @@ export async function runAgentLoop(
       for (const part of parts) {
         if (typeof part.text === "string" && part.text.length > 0) {
           turnText += part.text;
-          accumulatedParts.push({ text: part.text });
           // Stream to caller (e.g., NDJSON to AgentPhone) as soon as available.
           onTextChunk?.(part.text);
         }
         if (part.functionCall) {
           functionCalls.push(part.functionCall);
-          accumulatedParts.push({ functionCall: part.functionCall });
         }
+        // Preserve the entire part — keeps `thoughtSignature` (Gemini 2.5 requires it
+        // on functionCall parts when replayed in the next turn).
+        accumulatedParts.push(part);
       }
     }
     timer?.step(`gemini.turn${iter + 1}`);
