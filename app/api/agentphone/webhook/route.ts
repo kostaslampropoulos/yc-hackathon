@@ -4,7 +4,7 @@ import { getBusinesses, getCallers, getConversations, getDb } from "@/lib/mongo"
 import { buildCallerContext } from "@/lib/caller-context";
 import { runAgentLoop } from "@/lib/agent-loop";
 import { StepTimer } from "@/lib/timing";
-import type { Business, Caller, Conversation, TranscriptEntry } from "@/lib/types";
+import type { Business, Caller, Conversation } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -92,12 +92,7 @@ export async function POST(req: Request) {
   try {
     if (payload.event === "agent.message" && payload.channel === "voice") {
       const data = payload.data as VoiceTurnData;
-      const reply = await handleVoiceTurn(data, timer);
-      console.log(
-        `[webhook] voice ${data.callId} reply=${JSON.stringify(reply).slice(0, 200)}`,
-      );
-      console.log(timer.format(`[webhook] voice ${data.callId}`));
-      return Response.json(reply);
+      return streamVoiceTurn(data, timer);
     }
 
     if (payload.event === "agent.call_ended") {
@@ -121,104 +116,155 @@ export async function GET() {
   return Response.json({ ok: true, phase: 2 });
 }
 
-async function handleVoiceTurn(
-  data: VoiceTurnData,
-  timer: StepTimer,
-): Promise<{ text: string; action?: "transfer" | "hangup" }> {
-  const { callId, from, to, transcript } = data;
-  if (!callId || !from || !to) {
-    return { text: "I'm having trouble taking the call. Please try again in a moment." };
-  }
+function streamVoiceTurn(data: VoiceTurnData, timer: StepTimer): Response {
+  const encoder = new TextEncoder();
+  const requestStartedAt = Date.now();
 
-  const businessesCol = await getBusinesses();
-  const business = (await businessesCol.findOne({ agentPhoneNumber: to })) as Business | null;
-  timer.step("db.findBusiness");
-  if (!business) {
-    console.warn(`[webhook] no business for agent number ${to}`);
-    return { text: "This line isn't quite set up yet. Please try again later." };
-  }
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let closed = false;
+      const emit = (obj: Record<string, unknown>) => {
+        if (closed) return;
+        controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      };
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+      };
 
-  // Upsert caller atomically.
-  const callersCol = await getCallers();
-  const now = new Date();
-  const callerUpsert = await callersCol.findOneAndUpdate(
-    { businessId: business._id, phone: from },
-    {
-      $setOnInsert: {
-        businessId: business._id,
-        phone: from,
-        appointmentCount: 0,
-        callCount: 0,
-        createdAt: now,
-      },
-      $set: { updatedAt: now },
+      try {
+        const { callId, from, to, transcript } = data;
+        if (!callId || !from || !to) {
+          emit({ text: "I'm having trouble taking the call. Please try again in a moment." });
+          close();
+          return;
+        }
+
+        const businessesCol = await getBusinesses();
+        const business = (await businessesCol.findOne({ agentPhoneNumber: to })) as Business | null;
+        timer.step("db.findBusiness");
+        if (!business) {
+          console.warn(`[webhook] no business for agent number ${to}`);
+          emit({ text: "This line isn't quite set up yet. Please try again later." });
+          close();
+          return;
+        }
+
+        const callersCol = await getCallers();
+        const now = new Date();
+        const callerUpsert = await callersCol.findOneAndUpdate(
+          { businessId: business._id, phone: from },
+          {
+            $setOnInsert: {
+              businessId: business._id,
+              phone: from,
+              appointmentCount: 0,
+              callCount: 0,
+              createdAt: now,
+            },
+            $set: { updatedAt: now },
+          },
+          { upsert: true, returnDocument: "after" },
+        );
+        timer.step("db.upsertCaller");
+        const caller = callerUpsert as Caller | null;
+        if (!caller) {
+          emit({ text: "Sorry, one moment." });
+          close();
+          return;
+        }
+
+        const conversationsCol = await getConversations();
+        let conversation = (await conversationsCol.findOne({ callId })) as Conversation | null;
+        if (!conversation) {
+          const doc: Conversation = {
+            _id: new ObjectId(),
+            callId,
+            businessId: business._id,
+            callerId: caller._id,
+            callerPhone: from,
+            toNumber: to,
+            messages: [],
+            transcript: [],
+            status: "active",
+            startedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          };
+          await conversationsCol.insertOne(doc);
+          conversation = doc;
+        }
+        timer.step("db.findOrCreateConversation");
+
+        const userText = (transcript ?? "").trim();
+        if (userText) {
+          conversation.messages.push({ role: "user", parts: [{ text: userText }] });
+          conversation.transcript.push({ role: "user", text: userText, ts: now });
+        }
+
+        const db = await getDb();
+        const callerContext = await buildCallerContext(business, caller, db);
+        timer.step("buildCallerContext");
+
+        // Stream Gemini chunks as NDJSON. Hold the most recent chunk in a buffer so it can be
+        // emitted as the final (non-interim) chunk per AgentPhone's NDJSON protocol.
+        let buffered: string | null = null;
+        let firstChunkAt: number | null = null;
+        const result = await runAgentLoop(business, caller, conversation, callerContext, db, {
+          timer,
+          onTextChunk: (chunk) => {
+            if (firstChunkAt === null) firstChunkAt = Date.now();
+            if (buffered !== null) {
+              emit({ text: buffered, interim: true });
+            }
+            buffered = chunk;
+          },
+        });
+        timer.step("agentLoop.total");
+
+        // Final chunk: buffered text (or fallback if nothing was streamed).
+        const finalText = buffered ?? result.text;
+        const finalChunk: Record<string, unknown> = { text: finalText };
+        if (result.transfer) finalChunk.action = "transfer";
+        emit(finalChunk);
+
+        // Persist transcript + messages.
+        const assistantTs = new Date();
+        conversation.transcript.push({ role: "assistant", text: result.text, ts: assistantTs });
+        const setOnSave: Partial<Conversation> = {
+          messages: conversation.messages,
+          transcript: conversation.transcript,
+          updatedAt: assistantTs,
+        };
+        if (result.bookingMade) setOnSave.bookingMade = true;
+        await conversationsCol.updateOne({ _id: conversation._id }, { $set: setOnSave });
+        timer.step("db.saveConversation");
+
+        const ttft = firstChunkAt !== null ? `${firstChunkAt - requestStartedAt}ms` : "n/a";
+        console.log(`[webhook] voice ${callId} ttft=${ttft} replyLen=${result.text.length}`);
+        console.log(timer.format(`[webhook] voice ${callId}`));
+
+        close();
+      } catch (err) {
+        console.error("[webhook] streamVoiceTurn error:", err, timer.format());
+        emit({ text: "Sorry, just a moment." });
+        close();
+      }
     },
-    { upsert: true, returnDocument: "after" },
-  );
-  timer.step("db.upsertCaller");
-  const caller = callerUpsert as Caller | null;
-  if (!caller) {
-    return { text: "Sorry, one moment." };
-  }
+  });
 
-  // Find or create conversation.
-  const conversationsCol = await getConversations();
-  let conversation = (await conversationsCol.findOne({ callId })) as Conversation | null;
-  if (!conversation) {
-    const doc: Conversation = {
-      _id: new ObjectId(),
-      callId,
-      businessId: business._id,
-      callerId: caller._id,
-      callerPhone: from,
-      toNumber: to,
-      messages: [],
-      transcript: [],
-      status: "active",
-      startedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await conversationsCol.insertOne(doc);
-    conversation = doc;
-  }
-  timer.step("db.findOrCreateConversation");
-
-  // Append the user's utterance (Gemini Content shape).
-  const userText = (transcript ?? "").trim();
-  if (userText) {
-    conversation.messages.push({ role: "user", parts: [{ text: userText }] });
-    conversation.transcript.push({ role: "user", text: userText, ts: now });
-  }
-
-  // Build caller context fresh each turn.
-  const db = await getDb();
-  const callerContext = await buildCallerContext(business, caller, db);
-  timer.step("buildCallerContext");
-
-  // Run the agent loop.
-  const result = await runAgentLoop(business, caller, conversation, callerContext, db, timer);
-  timer.step("agentLoop.total");
-
-  // Append assistant reply to display transcript (messages already pushed in agent loop).
-  const assistantTs = new Date();
-  const display: TranscriptEntry = { role: "assistant", text: result.text, ts: assistantTs };
-  conversation.transcript.push(display);
-
-  // Save full conversation state.
-  const setOnSave: Partial<Conversation> = {
-    messages: conversation.messages,
-    transcript: conversation.transcript,
-    updatedAt: assistantTs,
-  };
-  if (result.bookingMade) setOnSave.bookingMade = true;
-  await conversationsCol.updateOne({ _id: conversation._id }, { $set: setOnSave });
-  timer.step("db.saveConversation");
-
-  if (result.transfer) {
-    return { text: result.text || "Connecting you now.", action: "transfer" };
-  }
-  return { text: result.text };
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
 
 async function handleCallEnded(data: CallEndedData, timer: StepTimer): Promise<void> {

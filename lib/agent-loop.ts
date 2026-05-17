@@ -1,4 +1,4 @@
-import type { Content, Part } from "@google/genai";
+import type { Content, FunctionCall, Part } from "@google/genai";
 import type { Db } from "mongodb";
 import { getGemini, GEMINI_MODEL, getGeminiTools, toGeminiMessages } from "./gemini";
 import { executeTool } from "./tools";
@@ -14,14 +14,21 @@ export type AgentResult = {
   bookingMade: boolean;
 };
 
+export type AgentLoopOptions = {
+  timer?: StepTimer;
+  /** Optional callback invoked for every streamed text chunk. */
+  onTextChunk?: (chunk: string) => void;
+};
+
 export async function runAgentLoop(
   business: Business,
   caller: Caller,
   conversation: Conversation,
   callerContext: string,
   db: Db,
-  timer?: StepTimer,
+  options: AgentLoopOptions = {},
 ): Promise<AgentResult> {
+  const { timer, onTextChunk } = options;
   const system = composeSystem(business, callerContext);
   const messages: Content[] = toGeminiMessages(conversation.messages as unknown[]);
 
@@ -31,33 +38,47 @@ export async function runAgentLoop(
   const result: AgentResult = { text: "", transfer: false, bookingMade: false };
 
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-    const response = await ai.models.generateContent({
+    const stream = await ai.models.generateContentStream({
       model: GEMINI_MODEL,
       contents: messages,
       config: {
         systemInstruction: system,
         tools,
         maxOutputTokens: 400,
-        // Gemini 2.5 supports a "thinking budget"; voice needs sub-second so disable thinking.
         thinkingConfig: { thinkingBudget: 0 },
       },
     });
+
+    // Accumulate streamed parts into a single assistant turn.
+    let turnText = "";
+    const functionCalls: FunctionCall[] = [];
+    const accumulatedParts: Part[] = [];
+
+    for await (const chunk of stream) {
+      const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+      for (const part of parts) {
+        if (typeof part.text === "string" && part.text.length > 0) {
+          turnText += part.text;
+          accumulatedParts.push({ text: part.text });
+          // Stream to caller (e.g., NDJSON to AgentPhone) as soon as available.
+          onTextChunk?.(part.text);
+        }
+        if (part.functionCall) {
+          functionCalls.push(part.functionCall);
+          accumulatedParts.push({ functionCall: part.functionCall });
+        }
+      }
+    }
     timer?.step(`gemini.turn${iter + 1}`);
 
-    const candidate = response.candidates?.[0];
-    const responseContent = candidate?.content;
-    const parts = responseContent?.parts ?? [];
+    if (accumulatedParts.length > 0) {
+      messages.push({ role: "model", parts: accumulatedParts });
+    }
 
-    const functionCallParts = parts.filter((p) => p.functionCall);
-
-    if (functionCallParts.length > 0) {
-      // Append model's content (text + functionCalls) to history.
-      messages.push({ role: "model", parts });
-
-      // Run each tool, build functionResponse parts.
+    if (functionCalls.length > 0) {
+      // Run all tool calls in order, append their responses, loop again.
       const toolResponseParts: Part[] = [];
-      for (const p of functionCallParts) {
-        const fc = p.functionCall!;
+      for (const fc of functionCalls) {
         const name = fc.name ?? "";
         const input = (fc.args as Record<string, unknown>) ?? {};
         let toolOut;
@@ -83,21 +104,12 @@ export async function runAgentLoop(
         if (toolOut.transfer) result.transfer = true;
         if (toolOut.bookingMade) result.bookingMade = true;
       }
-
       messages.push({ role: "user", parts: toolResponseParts });
       continue;
     }
 
-    // No function calls — extract text and end.
-    const text = parts
-      .filter((p) => typeof p.text === "string")
-      .map((p) => p.text!)
-      .join("")
-      .trim();
-    if (responseContent) {
-      messages.push({ role: "model", parts });
-    }
-    result.text = text;
+    // No function calls — final turn. Capture text and stop.
+    result.text = turnText.trim();
     break;
   }
 
@@ -108,7 +120,6 @@ export async function runAgentLoop(
     result.text = "Sorry, just a moment.";
   }
 
-  // Save updated history back onto the conversation (typed as unknown[] in storage).
   conversation.messages = messages as unknown as Conversation["messages"];
 
   return result;
