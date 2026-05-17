@@ -3,7 +3,10 @@
     "allow": [
       "WebFetch(domain:docs.paysponge.com)",
       "Bash(npm view *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git show *)",
+      "Read(//tmp/**)",
+      "Read(//c/tmp/**)"
     ]
   }
 }

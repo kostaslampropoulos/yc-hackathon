@@ -38,7 +38,7 @@ export default async function Home() {
 
       <section className="w-full max-w-2xl mt-16">
         <ol className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-          <Step n={1} title="Paste your Maps URL" body="Any real business with a public profile." />
+          <Step n={1} title="Paste your Maps URL" body="Any bizz with a public profile." />
           <Step n={2} title="We read everything" body="Hours, services, reviews, tone." />
           <Step n={3} title="Get a phone number" body="Live, ready to take calls." />
         </ol>
@@ -75,7 +75,7 @@ export default async function Home() {
 
 function Step({ n, title, body }: { n: number; title: string; body: string }) {
   return (
-    <li className="flex flex-col gap-1 p-4 rounded-md border border-border bg-card">
+    <li className="flex flex-col gap-1 p-4 rounded-lg bg-muted">
       <span className="text-xs text-muted-foreground">Step {n}</span>
       <span className="font-medium">{title}</span>
       <span className="text-muted-foreground text-xs">{body}</span>

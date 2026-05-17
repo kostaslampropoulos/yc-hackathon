@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.usemoss.dev)",
+      "WebFetch(domain:www.moss.dev)",
+      "Bash(git add *)",
+      "Bash(npm uninstall *)"
+    ]
+  }
+}

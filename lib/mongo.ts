@@ -1,5 +1,5 @@
 import { MongoClient, type Db, type Collection } from "mongodb";
-import type { Appointment, Business, Conversation } from "./types";
+import type { Business, Caller, Conversation, Appointment } from "./types";
 
 const dbName = process.env.MONGODB_DB_NAME || "receptionist";
 
@@ -23,23 +23,57 @@ export async function getDb(): Promise<Db> {
   return client.db(dbName);
 }
 
-let businessIndexesEnsured = false;
-let appointmentIndexesEnsured = false;
-let conversationIndexesEnsured = false;
+const indexesEnsured = {
+  businesses: false,
+  callers: false,
+  conversations: false,
+  appointments: false,
+};
 
 export async function getBusinesses(): Promise<Collection<Business>> {
   const db = await getDb();
   const collection = db.collection<Business>("businesses");
-  if (!businessIndexesEnsured) {
-    businessIndexesEnsured = true;
+  if (!indexesEnsured.businesses) {
+    indexesEnsured.businesses = true;
     await Promise.all([
       collection.createIndex({ placeId: 1 }, { unique: true }),
       collection.createIndex({ ownerId: 1 }),
       collection.createIndex({ agentPhoneNumber: 1 }),
       collection.createIndex({ agentPhoneAgentId: 1 }),
     ]).catch((err) => {
-      console.warn("[mongo] business index creation failed:", err);
-      businessIndexesEnsured = false;
+      console.warn("[mongo] businesses index creation failed:", err);
+      indexesEnsured.businesses = false;
+    });
+  }
+  return collection;
+}
+
+export async function getCallers(): Promise<Collection<Caller>> {
+  const db = await getDb();
+  const collection = db.collection<Caller>("callers");
+  if (!indexesEnsured.callers) {
+    indexesEnsured.callers = true;
+    await collection
+      .createIndex({ businessId: 1, phone: 1 }, { unique: true })
+      .catch((err) => {
+        console.warn("[mongo] callers index creation failed:", err);
+        indexesEnsured.callers = false;
+      });
+  }
+  return collection;
+}
+
+export async function getConversations(): Promise<Collection<Conversation>> {
+  const db = await getDb();
+  const collection = db.collection<Conversation>("conversations");
+  if (!indexesEnsured.conversations) {
+    indexesEnsured.conversations = true;
+    await Promise.all([
+      collection.createIndex({ callId: 1 }, { unique: true }),
+      collection.createIndex({ businessId: 1, startedAt: -1 }),
+    ]).catch((err) => {
+      console.warn("[mongo] conversations index creation failed:", err);
+      indexesEnsured.conversations = false;
     });
   }
   return collection;
@@ -48,30 +82,14 @@ export async function getBusinesses(): Promise<Collection<Business>> {
 export async function getAppointments(): Promise<Collection<Appointment>> {
   const db = await getDb();
   const collection = db.collection<Appointment>("appointments");
-  if (!appointmentIndexesEnsured) {
-    appointmentIndexesEnsured = true;
+  if (!indexesEnsured.appointments) {
+    indexesEnsured.appointments = true;
     await Promise.all([
-      collection.createIndex({ businessId: 1, startsAt: 1 }),
-      collection.createIndex({ businessId: 1, callerPhone: 1 }),
+      collection.createIndex({ businessId: 1, startTime: 1 }),
+      collection.createIndex({ callerId: 1, startTime: 1 }),
     ]).catch((err) => {
-      console.warn("[mongo] appointment index creation failed:", err);
-      appointmentIndexesEnsured = false;
-    });
-  }
-  return collection;
-}
-
-export async function getConversations(): Promise<Collection<Conversation>> {
-  const db = await getDb();
-  const collection = db.collection<Conversation>("conversations");
-  if (!conversationIndexesEnsured) {
-    conversationIndexesEnsured = true;
-    await Promise.all([
-      collection.createIndex({ callId: 1 }, { unique: true }),
-      collection.createIndex({ businessId: 1, startedAt: -1 }),
-    ]).catch((err) => {
-      console.warn("[mongo] conversation index creation failed:", err);
-      conversationIndexesEnsured = false;
+      console.warn("[mongo] appointments index creation failed:", err);
+      indexesEnsured.appointments = false;
     });
   }
   return collection;

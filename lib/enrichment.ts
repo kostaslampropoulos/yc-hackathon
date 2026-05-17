@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getBusinesses } from "./mongo";
 import { enrichBusinessFromWebsite } from "./browseruse";
+import { upsertEnrichedServices } from "./moss";
 
 export async function runEnrichmentJob(businessId: ObjectId): Promise<void> {
   const businesses = await getBusinesses();
@@ -53,6 +54,15 @@ export async function runEnrichmentJob(businessId: ObjectId): Promise<void> {
           updatedAt: new Date(),
         },
       },
+    );
+    await upsertEnrichedServices({
+      placeId: business.placeId,
+      services: result.services,
+      bookingUrl: result.bookingUrl,
+      bookingProvider: result.bookingProvider,
+      notes: result.notes,
+    }).catch((err) =>
+      console.warn(`[enrichment] moss upsert failed:`, (err as Error).message),
     );
   } catch (err) {
     console.error(`[enrichment] failed for ${businessId}:`, err);

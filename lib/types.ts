@@ -1,4 +1,5 @@
 import type { ObjectId } from "mongodb";
+import type Anthropic from "@anthropic-ai/sdk";
 
 export type DayHours = Array<{ open: string; close: string }>;
 
@@ -81,39 +82,6 @@ export type Business = {
   updatedAt: Date;
 };
 
-export type Appointment = {
-  _id: ObjectId;
-  businessId: ObjectId;
-  callerPhone: string;
-  customerName: string;
-  customerEmail: string | null;
-  service: string;
-  startsAt: Date;
-  endsAt?: Date | null;
-  notes?: string | null;
-  source: "voice" | "web" | "manual";
-  callId?: string | null;
-  confirmationEmailMessageId?: string | null;
-  createdAt: Date;
-};
-
-export type ConversationTurn = {
-  role: "user" | "assistant";
-  content: string;
-  ts: Date;
-};
-
-export type Conversation = {
-  _id: ObjectId;
-  businessId: ObjectId;
-  callId: string;
-  callerPhone: string | null;
-  turns: ConversationTurn[];
-  startedAt: Date;
-  updatedAt: Date;
-  endedAt?: Date | null;
-};
-
 export type BusinessForPrompt = Omit<
   Business,
   | "systemPrompt"
@@ -125,3 +93,60 @@ export type BusinessForPrompt = Omit<
   | "createdAt"
   | "updatedAt"
 >;
+
+export type AnthropicMessage = Anthropic.MessageParam;
+
+export type Caller = {
+  _id: ObjectId;
+  businessId: ObjectId;
+  phone: string;
+  callbackPhone?: string;
+  name?: string;
+  email?: string;
+  notes?: string;
+  appointmentCount: number;
+  callCount: number;
+  lastCalledAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type TranscriptEntry = { role: "user" | "assistant"; text: string; ts: Date };
+
+export type Conversation = {
+  _id: ObjectId;
+  callId: string;
+  businessId: ObjectId;
+  callerId: ObjectId;
+  callerPhone: string;
+  toNumber: string;
+  messages: AnthropicMessage[];
+  transcript: TranscriptEntry[];
+  status: "active" | "ended";
+  startedAt: Date;
+  endedAt?: Date;
+  summary?: string;
+  userSentiment?: string;
+  durationSeconds?: number;
+  bookingMade?: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type Appointment = {
+  _id: ObjectId;
+  businessId: ObjectId;
+  callerId: ObjectId;
+  conversationId: ObjectId;
+  callerName: string;
+  callerPhone: string;
+  callerEmail?: string;
+  service: string;
+  startTime: Date;
+  endTime: Date;
+  durationMinutes: number;
+  status: "booked" | "cancelled";
+  source: "voice";
+  confirmationEmailMessageId?: string | null;
+  createdAt: Date;
+};

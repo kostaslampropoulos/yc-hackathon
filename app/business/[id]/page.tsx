@@ -3,8 +3,9 @@ import { ObjectId } from "mongodb";
 import { auth } from "@clerk/nextjs/server";
 import { getBusinesses } from "@/lib/mongo";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/copy-button";
+import { RecentCalls } from "@/components/recent-calls";
+import { RecentAppointments } from "@/components/recent-appointments";
 import { EnrichmentCard } from "@/components/enrichment-card";
 import { WalletCard } from "@/components/wallet-card";
 import { describeHoursForPrompt } from "@/lib/hours";
@@ -27,9 +28,11 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
     notFound();
   }
 
+  const businessIdStr = business._id.toString();
+
   return (
     <div className="flex flex-1 flex-col items-center px-6 py-12 sm:py-16">
-      <div className="w-full max-w-3xl flex flex-col gap-6">
+      <div className="w-full max-w-6xl flex flex-col gap-6">
         <header className="flex flex-col gap-2">
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight font-heading">
             {business.name}
@@ -37,57 +40,50 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           <p className="text-muted-foreground">{business.address}</p>
         </header>
 
-        <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
-          <div className="text-sm text-muted-foreground">Your receptionist&apos;s phone number</div>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div
-              className="text-3xl sm:text-4xl font-mono tracking-tight"
-            >
-              {business.agentPhoneNumber}
-            </div>
-            <CopyButton value={business.agentPhoneNumber} label="Copy number" />
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Your AI receptionist is ready. Try calling the number above.
-          </p>
-          {business.agentMailAddress && (
-            <p className="text-xs text-muted-foreground">
-              Booking confirmations are sent from{" "}
-              <span className="font-mono">{business.agentMailAddress}</span> (AgentMail).
-            </p>
-          )}
-        </Card>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="flex flex-col gap-6">
+            <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+              <div className="text-sm text-muted-foreground">Your receptionist&apos;s phone number</div>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="text-2xl sm:text-3xl font-mono tracking-tight">
+                  {business.agentPhoneNumber}
+                </div>
+                <CopyButton value={business.agentPhoneNumber} label="Copy" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Try calling the number. Your AI receptionist is live.
+              </p>
+              {business.agentMailAddress && (
+                <p className="text-xs text-muted-foreground">
+                  Booking confirmations go out from{" "}
+                  <span className="font-mono">{business.agentMailAddress}</span> (AgentMail).
+                </p>
+              )}
+            </Card>
 
-        <WalletCard businessId={business._id.toString()} />
+            <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+              <h2 className="font-semibold">Hours ({business.timezone})</h2>
+              <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
+                {describeHoursForPrompt(business.hours)}
+              </pre>
+            </Card>
+
+            <WalletCard businessId={businessIdStr} />
+          </div>
+
+          <RecentCalls businessId={businessIdStr} />
+          <RecentAppointments businessId={businessIdStr} />
+        </div>
 
         <EnrichmentCard
-          businessId={business._id.toString()}
+          businessId={businessIdStr}
           initial={business.enrichment ?? null}
         />
-
-        <Card className="p-6 flex flex-col gap-4 border-0 bg-muted">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Try a web call</h2>
-            <Button variant="outline" disabled>
-              Coming in Phase 2
-            </Button>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Once Phase 2 ships, you&apos;ll be able to test the receptionist directly from this page.
-          </p>
-        </Card>
-
-        <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
-          <h2 className="font-semibold">Hours ({business.timezone})</h2>
-          <pre className="text-sm text-muted-foreground whitespace-pre-wrap font-mono">
-            {describeHoursForPrompt(business.hours)}
-          </pre>
-        </Card>
 
         {business.serviceMenu.length > 0 && (
           <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
             <h2 className="font-semibold">Services we listed for you</h2>
-            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm">
+            <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1 text-sm">
               {business.serviceMenu.map((s) => (
                 <li key={s} className="text-muted-foreground">
                   • {s}

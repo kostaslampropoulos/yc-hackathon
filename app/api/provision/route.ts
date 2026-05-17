@@ -8,6 +8,7 @@ import { generateSystemPrompt } from "@/lib/prompt";
 import { createAgent, provisionNumber, attachNumberToAgent, deleteAgent } from "@/lib/agentphone";
 import { createBusinessInbox } from "@/lib/agentmail";
 import { createBusinessWallet } from "@/lib/sponge";
+import { provisionBusinessKnowledgeIndex } from "@/lib/moss";
 import { runEnrichmentJob } from "@/lib/enrichment";
 import { getBusinesses } from "@/lib/mongo";
 import type { Business, BusinessForPrompt, TopReview } from "@/lib/types";
@@ -229,6 +230,20 @@ export async function POST(req: Request) {
     if (businessForPrompt.website) {
       after(() => runEnrichmentJob(result.insertedId));
     }
+    after(() =>
+      provisionBusinessKnowledgeIndex({
+        placeId,
+        business: {
+          name: businessForPrompt.name,
+          serviceMenu,
+          websiteMarkdown,
+          summary: businessForPrompt.summary,
+          topReviews: businessForPrompt.topReviews,
+        },
+      }).catch((err) =>
+        console.warn(`[provision] moss index creation failed:`, (err as Error).message),
+      ),
+    );
     return Response.json({ businessId: result.insertedId.toString() });
   } catch (err) {
     // Mongo failed — log orphans for cleanup; surfaces in error message.
