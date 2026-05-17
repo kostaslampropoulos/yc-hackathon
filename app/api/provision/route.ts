@@ -140,11 +140,13 @@ export async function POST(req: Request) {
 
   try {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const beginMessage = `Hi, thanks for calling ${businessForPrompt.name}. How can I help you today?`;
     const agent = await createAgent({
       name: businessForPrompt.name,
       transferNumber: businessForPrompt.phone,
       systemPrompt,
       webhookUrl: `${appUrl}/api/agentphone/webhook`,
+      beginMessage,
     });
     agentId = agent.id;
 

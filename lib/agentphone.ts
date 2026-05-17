@@ -38,9 +38,9 @@ async function apFetch<T>(path: string, opts: AgentPhoneFetchOptions = {}): Prom
   return parsed as T;
 }
 
-// Voice id default. We pick the first available voice from /voices at startup,
-// but provide a static fallback that is documented to work.
-const DEFAULT_VOICE_ID = process.env.AGENTPHONE_DEFAULT_VOICE || "rachel";
+// Voice id default. Must match an id from GET /v1/agents/voices.
+// "openai-Nova" is American female, widely deployable.
+const DEFAULT_VOICE_ID = process.env.AGENTPHONE_DEFAULT_VOICE || "openai-Nova";
 
 export type AgentPhoneAgentResponse = {
   id: string;
@@ -61,6 +61,7 @@ export async function createAgent(input: {
   voice?: string;
   systemPrompt?: string;
   webhookUrl?: string;
+  beginMessage?: string;
 }): Promise<{ id: string }> {
   const body: Record<string, unknown> = {
     name: input.name,
@@ -79,6 +80,10 @@ export async function createAgent(input: {
     body.webhookUrl = input.webhookUrl;
     body.webhook_url = input.webhookUrl;
   }
+  if (input.beginMessage) {
+    body.beginMessage = input.beginMessage;
+    body.begin_message = input.beginMessage;
+  }
 
   const data = await apFetch<AgentPhoneAgentResponse>("/agents", {
     method: "POST",
@@ -86,6 +91,36 @@ export async function createAgent(input: {
   });
   if (!data.id) throw new Error(`AgentPhone agent create: missing id in response: ${JSON.stringify(data).slice(0, 300)}`);
   return { id: data.id };
+}
+
+export async function updateAgent(
+  agentId: string,
+  patch: {
+    voice?: string;
+    beginMessage?: string;
+    systemPrompt?: string;
+    transferNumber?: string | null;
+  },
+): Promise<AgentPhoneAgentResponse> {
+  const body: Record<string, unknown> = {};
+  if (patch.voice !== undefined) body.voice = patch.voice;
+  if (patch.beginMessage !== undefined) {
+    body.beginMessage = patch.beginMessage;
+    body.begin_message = patch.beginMessage;
+  }
+  if (patch.systemPrompt !== undefined) {
+    body.systemPrompt = patch.systemPrompt;
+    body.system_prompt = patch.systemPrompt;
+    body.instructions = patch.systemPrompt;
+  }
+  if (patch.transferNumber !== undefined) {
+    body.transferNumber = patch.transferNumber;
+    body.transfer_number = patch.transferNumber;
+  }
+  return apFetch<AgentPhoneAgentResponse>(`/agents/${agentId}`, {
+    method: "PATCH",
+    body,
+  });
 }
 
 export async function provisionNumber(input: { country: "US" | "CA" }): Promise<{ id: string; phoneNumber: string }> {
