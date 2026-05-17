@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.paysponge.com)",
+      "Bash(npm view *)",
+      "Bash(npm run *)"
+    ]
+  }
+}

@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { provisionRequestSchema } from "@/lib/validators";
 import { resolveMapsUrlToPlaceId, getPlaceDetails, type PlaceDetails } from "@/lib/places";
@@ -5,6 +6,9 @@ import { scrapeWebsite } from "@/lib/firecrawl";
 import { normalizeHours } from "@/lib/hours";
 import { generateSystemPrompt } from "@/lib/prompt";
 import { createAgent, provisionNumber, attachNumberToAgent, deleteAgent } from "@/lib/agentphone";
+import { createBusinessInbox } from "@/lib/agentmail";
+import { createBusinessWallet } from "@/lib/sponge";
+import { runEnrichmentJob } from "@/lib/enrichment";
 import { getBusinesses } from "@/lib/mongo";
 import type { Business, BusinessForPrompt, TopReview } from "@/lib/types";
 
@@ -164,6 +168,38 @@ export async function POST(req: Request) {
     );
   }
 
+  // Step 6b: AgentMail inbox + Sponge agent wallet (best-effort, run in parallel)
+  const [inboxResult, walletResult] = await Promise.allSettled([
+    createBusinessInbox({ businessId: placeId, businessName: businessForPrompt.name }),
+    createBusinessWallet({
+      businessName: businessForPrompt.name,
+      placeId,
+      dailySpendingLimitUsd: process.env.SPONGE_DEFAULT_DAILY_LIMIT_USD || "5",
+    }),
+  ]);
+
+  let agentMailInboxId: string | undefined;
+  let agentMailAddress: string | null | undefined;
+  if (inboxResult.status === "fulfilled") {
+    agentMailInboxId = inboxResult.value.inboxId;
+    agentMailAddress = inboxResult.value.emailAddress;
+  } else {
+    console.warn(`[provision] agentmail inbox creation failed:`, inboxResult.reason);
+  }
+
+  let spongeAgentId: string | undefined;
+  let spongeAgentApiKey: string | undefined;
+  let spongeBaseAddress: string | null | undefined;
+  let spongeSolanaAddress: string | null | undefined;
+  if (walletResult.status === "fulfilled") {
+    spongeAgentId = walletResult.value.agentId;
+    spongeAgentApiKey = walletResult.value.agentApiKey;
+    spongeBaseAddress = walletResult.value.baseAddress;
+    spongeSolanaAddress = walletResult.value.solanaAddress;
+  } else {
+    console.warn(`[provision] sponge wallet creation failed:`, walletResult.reason);
+  }
+
   // Step 7: insert into Mongo
   const now = new Date();
   const doc: Omit<Business, "_id"> = {
@@ -173,12 +209,26 @@ export async function POST(req: Request) {
     agentPhoneAgentId: agentId!,
     agentPhoneNumberId: numberId!,
     agentPhoneNumber: phoneNumber!,
+    agentMailInboxId,
+    agentMailAddress,
+    spongeAgentId,
+    spongeAgentApiKey,
+    spongeBaseAddress,
+    spongeSolanaAddress,
+    pendingBillUsd: 0,
+    totalCallsCount: 0,
+    enrichment: businessForPrompt.website
+      ? { status: "pending", startedAt: now }
+      : undefined,
     createdAt: now,
     updatedAt: now,
   };
 
   try {
     const result = await businesses.insertOne(doc as Business);
+    if (businessForPrompt.website) {
+      after(() => runEnrichmentJob(result.insertedId));
+    }
     return Response.json({ businessId: result.insertedId.toString() });
   } catch (err) {
     // Mongo failed — log orphans for cleanup; surfaces in error message.

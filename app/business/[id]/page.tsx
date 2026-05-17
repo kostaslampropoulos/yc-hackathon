@@ -5,6 +5,8 @@ import { getBusinesses } from "@/lib/mongo";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/copy-button";
+import { EnrichmentCard } from "@/components/enrichment-card";
+import { WalletCard } from "@/components/wallet-card";
 import { describeHoursForPrompt } from "@/lib/hours";
 
 export default async function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
@@ -48,7 +50,20 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           <p className="text-sm text-muted-foreground">
             Your AI receptionist is ready. Try calling the number above.
           </p>
+          {business.agentMailAddress && (
+            <p className="text-xs text-muted-foreground">
+              Booking confirmations are sent from{" "}
+              <span className="font-mono">{business.agentMailAddress}</span> (AgentMail).
+            </p>
+          )}
         </Card>
+
+        <WalletCard businessId={business._id.toString()} />
+
+        <EnrichmentCard
+          businessId={business._id.toString()}
+          initial={business.enrichment ?? null}
+        />
 
         <Card className="p-6 flex flex-col gap-4 border-0 bg-muted">
           <div className="flex items-center justify-between">
