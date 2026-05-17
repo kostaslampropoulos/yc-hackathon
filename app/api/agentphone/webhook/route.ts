@@ -45,14 +45,32 @@ export async function POST(req: Request) {
   const signature = req.headers.get("x-webhook-signature") ?? "";
   const timestamp = req.headers.get("x-webhook-timestamp") ?? "";
   const secret = process.env.AGENTPHONE_WEBHOOK_SECRET;
+  const skipVerify = process.env.WEBHOOK_SKIP_VERIFY === "true";
 
-  if (!secret) {
+  // Diagnostic: every incoming request, before HMAC check.
+  console.log(
+    `[webhook] incoming method=POST bodyLen=${rawBody.length}` +
+      ` sig=${signature ? signature.slice(0, 16) + "…" : "MISSING"}` +
+      ` ts=${timestamp || "MISSING"}` +
+      ` skipVerify=${skipVerify}`,
+  );
+
+  if (!secret && !skipVerify) {
     console.error("[webhook] AGENTPHONE_WEBHOOK_SECRET is not set");
     return new Response("Server misconfigured", { status: 500 });
   }
 
-  if (!verifyHmac(rawBody, signature, timestamp, secret)) {
-    return new Response("Invalid signature", { status: 401 });
+  if (!skipVerify) {
+    const ok = verifyHmac(rawBody, signature, timestamp, secret!);
+    if (!ok) {
+      console.warn(
+        `[webhook] HMAC verification FAILED. To debug, set WEBHOOK_SKIP_VERIFY=true in .env.local and try again.` +
+          ` bodyPreview=${rawBody.slice(0, 200)}`,
+      );
+      return new Response("Invalid signature", { status: 401 });
+    }
+  } else {
+    console.warn("[webhook] WEBHOOK_SKIP_VERIFY=true — HMAC NOT enforced. Dev only.");
   }
   timer.step("hmac");
 
@@ -62,6 +80,8 @@ export async function POST(req: Request) {
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
+
+  console.log(`[webhook] event=${payload.event} channel=${payload.channel ?? "-"}`);
 
   try {
     if (payload.event === "agent.message" && payload.channel === "voice") {
@@ -77,6 +97,8 @@ export async function POST(req: Request) {
       console.log(timer.format(`[webhook] call_ended ${data.callId}`));
       return Response.json({ ok: true });
     }
+
+    console.log(`[webhook] unhandled event=${payload.event} channel=${payload.channel ?? "-"} — returning 200 ok`);
   } catch (err) {
     console.error("[webhook] error:", err, timer.format());
     // Always return safe text so the call doesn't die.
