@@ -202,22 +202,33 @@ export async function POST(req: Request) {
     );
   }
 
-  // Step 8: index website content into Moss for in-call search (best-effort, non-blocking).
+  // Step 8: index website content into Moss for in-call search.
+  // Awaited so the knowledge base is ready by the time the user lands on /business/[id].
+  // Failure is non-fatal: provisioning still succeeds, the dashboard exposes a "Re-index" button.
   if (isMossConfigured() && doc.websiteMarkdown) {
-    const businessForIndex = { ...doc, _id: new ObjectId(insertedId) } as Business;
-    indexBusinessWebsite(businessForIndex)
-      .then(async (chunkCount) => {
-        if (chunkCount > 0) {
-          await businesses.updateOne(
-            { _id: businessForIndex._id },
-            { $set: { mossIndexedAt: new Date(), mossChunkCount: chunkCount } },
-          );
-          console.log(`[provision] moss indexed ${chunkCount} chunks for business ${insertedId}`);
-        }
-      })
-      .catch((err) => {
-        console.warn(`[provision] moss indexing failed for business ${insertedId}:`, (err as Error).message);
+    const businessOid = new ObjectId(insertedId);
+    const startedAt = Date.now();
+    try {
+      const chunkCount = await indexBusinessWebsite({
+        _id: businessOid,
+        websiteMarkdown: doc.websiteMarkdown,
+        name: doc.name,
       });
+      if (chunkCount > 0) {
+        await businesses.updateOne(
+          { _id: businessOid },
+          { $set: { mossIndexedAt: new Date(), mossChunkCount: chunkCount } },
+        );
+        console.log(
+          `[provision] moss indexed ${chunkCount} chunks for business ${insertedId} in ${Date.now() - startedAt}ms`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[provision] moss indexing failed for business ${insertedId} after ${Date.now() - startedAt}ms:`,
+        (err as Error).message,
+      );
+    }
   }
 
   return Response.json({ businessId: insertedId });
