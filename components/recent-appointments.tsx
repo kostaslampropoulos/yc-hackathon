@@ -69,7 +69,7 @@ export function RecentAppointments({ businessId }: { businessId: string }) {
   }, [businessId]);
 
   return (
-    <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+    <Card className="p-5 flex flex-col">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold flex items-center gap-2">
           Upcoming appointments
@@ -83,7 +83,7 @@ export function RecentAppointments({ businessId }: { businessId: string }) {
       ) : (
         <ul className="flex flex-col gap-3">
           {appointments.map((a) => (
-            <li key={a.id} className="flex flex-col gap-1 rounded-md bg-background p-3">
+            <li key={a.id} className="flex flex-col gap-1 rounded-md bg-muted p-3">
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span className="font-medium truncate">{a.callerName}</span>
                 <span className="text-xs text-muted-foreground shrink-0">

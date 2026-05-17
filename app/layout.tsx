@@ -78,7 +78,7 @@ export default function RootLayout({
             </div>
           </header>
           <main className="relative z-10 flex flex-1 flex-col">{children}</main>
-          <Toaster richColors closeButton />
+          <Toaster />
         </body>
       </html>
     </ClerkProvider>

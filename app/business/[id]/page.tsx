@@ -41,7 +41,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="flex flex-col gap-5">
-            <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+            <Card className="p-5 flex flex-col gap-3">
               <div className="text-sm text-muted-foreground">Your receptionist&apos;s phone number</div>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="text-2xl sm:text-3xl font-mono tracking-tight">
@@ -54,7 +54,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
               </p>
             </Card>
 
-            <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+            <Card className="p-5 flex flex-col gap-3">
               <h2 className="font-semibold">Hours ({business.timezone})</h2>
               <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
                 {describeHoursForPrompt(business.hours)}
@@ -62,7 +62,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
             </Card>
 
             {business.intakeQuestions && business.intakeQuestions.length > 0 && (
-              <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+              <Card className="p-5 flex flex-col gap-3">
                 <h2 className="font-semibold">Booking intake</h2>
                 <p className="text-xs text-muted-foreground">
                   The receptionist asks these before booking an appointment.
@@ -78,7 +78,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
               </Card>
             )}
 
-            <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+            <Card className="p-5 flex flex-col gap-3">
               <h2 className="font-semibold">Knowledge base</h2>
               {business.mossIndexedAt && business.mossChunkCount ? (
                 <>
@@ -108,7 +108,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
         </div>
 
         {business.serviceMenu.length > 0 && (
-          <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+          <Card className="p-5 flex flex-col gap-3">
             <h2 className="font-semibold">Services we listed for you</h2>
             <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1 text-sm">
               {business.serviceMenu.map((s) => (
