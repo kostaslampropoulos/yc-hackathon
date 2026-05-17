@@ -87,6 +87,9 @@ export async function POST(req: Request) {
     if (payload.event === "agent.message" && payload.channel === "voice") {
       const data = payload.data as VoiceTurnData;
       const reply = await handleVoiceTurn(data, timer);
+      console.log(
+        `[webhook] voice ${data.callId} reply=${JSON.stringify(reply).slice(0, 200)}`,
+      );
       console.log(timer.format(`[webhook] voice ${data.callId}`));
       return Response.json(reply);
     }
