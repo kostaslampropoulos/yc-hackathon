@@ -3,6 +3,7 @@ import { verifyHmac } from "@/lib/webhook-auth";
 import { getBusinesses, getCallers, getConversations, getDb } from "@/lib/mongo";
 import { buildCallerContext } from "@/lib/caller-context";
 import { runAgentLoop } from "@/lib/agent-loop";
+import { StepTimer } from "@/lib/timing";
 import type { Business, Caller, Conversation, TranscriptEntry } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -37,8 +38,10 @@ type WebhookPayload = {
 };
 
 export async function POST(req: Request) {
-  const startedAt = Date.now();
+  const timer = new StepTimer();
   const rawBody = await req.text();
+  timer.step("readBody");
+
   const signature = req.headers.get("x-webhook-signature") ?? "";
   const timestamp = req.headers.get("x-webhook-timestamp") ?? "";
   const secret = process.env.AGENTPHONE_WEBHOOK_SECRET;
@@ -51,6 +54,7 @@ export async function POST(req: Request) {
   if (!verifyHmac(rawBody, signature, timestamp, secret)) {
     return new Response("Invalid signature", { status: 401 });
   }
+  timer.step("hmac");
 
   let payload: WebhookPayload;
   try {
@@ -61,18 +65,20 @@ export async function POST(req: Request) {
 
   try {
     if (payload.event === "agent.message" && payload.channel === "voice") {
-      const reply = await handleVoiceTurn(payload.data as VoiceTurnData);
-      const latencyMs = Date.now() - startedAt;
-      console.log(`[webhook] voice turn ${(payload.data as VoiceTurnData).callId} in ${latencyMs}ms`);
+      const data = payload.data as VoiceTurnData;
+      const reply = await handleVoiceTurn(data, timer);
+      console.log(timer.format(`[webhook] voice ${data.callId}`));
       return Response.json(reply);
     }
 
     if (payload.event === "agent.call_ended") {
-      await handleCallEnded(payload.data as CallEndedData);
+      const data = payload.data as CallEndedData;
+      await handleCallEnded(data, timer);
+      console.log(timer.format(`[webhook] call_ended ${data.callId}`));
       return Response.json({ ok: true });
     }
   } catch (err) {
-    console.error("[webhook] error:", err);
+    console.error("[webhook] error:", err, timer.format());
     // Always return safe text so the call doesn't die.
     return Response.json({ text: "Sorry, just a moment." });
   }
@@ -86,6 +92,7 @@ export async function GET() {
 
 async function handleVoiceTurn(
   data: VoiceTurnData,
+  timer: StepTimer,
 ): Promise<{ text: string; action?: "transfer" | "hangup" }> {
   const { callId, from, to, transcript } = data;
   if (!callId || !from || !to) {
@@ -94,6 +101,7 @@ async function handleVoiceTurn(
 
   const businessesCol = await getBusinesses();
   const business = (await businessesCol.findOne({ agentPhoneNumber: to })) as Business | null;
+  timer.step("db.findBusiness");
   if (!business) {
     console.warn(`[webhook] no business for agent number ${to}`);
     return { text: "This line isn't quite set up yet. Please try again later." };
@@ -116,6 +124,7 @@ async function handleVoiceTurn(
     },
     { upsert: true, returnDocument: "after" },
   );
+  timer.step("db.upsertCaller");
   const caller = callerUpsert as Caller | null;
   if (!caller) {
     return { text: "Sorry, one moment." };
@@ -142,6 +151,7 @@ async function handleVoiceTurn(
     await conversationsCol.insertOne(doc);
     conversation = doc;
   }
+  timer.step("db.findOrCreateConversation");
 
   // Append the user's utterance.
   const userText = (transcript ?? "").trim();
@@ -151,11 +161,13 @@ async function handleVoiceTurn(
   }
 
   // Build caller context fresh each turn.
-  const callerContext = await buildCallerContext(business, caller, await getDb());
+  const db = await getDb();
+  const callerContext = await buildCallerContext(business, caller, db);
+  timer.step("buildCallerContext");
 
   // Run the agent loop.
-  const db = await getDb();
-  const result = await runAgentLoop(business, caller, conversation, callerContext, db);
+  const result = await runAgentLoop(business, caller, conversation, callerContext, db, timer);
+  timer.step("agentLoop.total");
 
   // Append assistant reply to display transcript (messages already pushed in agent loop).
   const assistantTs = new Date();
@@ -170,6 +182,7 @@ async function handleVoiceTurn(
   };
   if (result.bookingMade) setOnSave.bookingMade = true;
   await conversationsCol.updateOne({ _id: conversation._id }, { $set: setOnSave });
+  timer.step("db.saveConversation");
 
   if (result.transfer) {
     return { text: result.text || "Connecting you now.", action: "transfer" };
@@ -177,12 +190,13 @@ async function handleVoiceTurn(
   return { text: result.text };
 }
 
-async function handleCallEnded(data: CallEndedData): Promise<void> {
+async function handleCallEnded(data: CallEndedData, timer: StepTimer): Promise<void> {
   const { callId, summary, userSentiment, durationSeconds, status } = data;
   if (!callId) return;
 
   const conversationsCol = await getConversations();
   const conversation = await conversationsCol.findOne({ callId });
+  timer.step("db.findConversation");
   if (!conversation) {
     console.warn(`[webhook] call_ended for unknown callId ${callId}`);
     return;
@@ -203,11 +217,13 @@ async function handleCallEnded(data: CallEndedData): Promise<void> {
   const apptCount = await db
     .collection("appointments")
     .countDocuments({ conversationId: conversation._id });
+  timer.step("db.countAppointments");
   if (apptCount > 0) {
     update.bookingMade = true;
   }
 
   await conversationsCol.updateOne({ _id: conversation._id }, { $set: update });
+  timer.step("db.updateConversation");
 
   // Bump caller's callCount and lastCalledAt.
   const callersCol = await getCallers();
@@ -215,6 +231,7 @@ async function handleCallEnded(data: CallEndedData): Promise<void> {
     { _id: conversation.callerId },
     { $inc: { callCount: 1 }, $set: { lastCalledAt: endedAt, updatedAt: endedAt } },
   );
+  timer.step("db.bumpCaller");
 
   console.log(`[webhook] call_ended ${callId} status=${status ?? "unknown"} bookingMade=${update.bookingMade ?? false}`);
 }

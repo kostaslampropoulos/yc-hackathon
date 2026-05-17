@@ -3,6 +3,7 @@ import type { Db } from "mongodb";
 import { anthropic, CLAUDE_MODEL } from "./anthropic";
 import { TOOL_DEFINITIONS, executeTool } from "./tools";
 import { todayInBusinessTz, nowInBusinessTz } from "./dates";
+import type { StepTimer } from "./timing";
 import type { Business, Caller, Conversation, AnthropicMessage } from "./types";
 
 const MAX_ITERATIONS = 5;
@@ -19,6 +20,7 @@ export async function runAgentLoop(
   conversation: Conversation,
   callerContext: string,
   db: Db,
+  timer?: StepTimer,
 ): Promise<AgentResult> {
   const system = composeSystem(business, callerContext);
   const messages: AnthropicMessage[] = [...conversation.messages];
@@ -33,6 +35,7 @@ export async function runAgentLoop(
       tools: TOOL_DEFINITIONS,
       messages,
     });
+    timer?.step(`claude.turn${iter + 1}`);
 
     if (response.stop_reason === "tool_use") {
       // Run each tool_use block in order, collect results.
@@ -51,6 +54,7 @@ export async function runAgentLoop(
         } catch (err) {
           toolOut = { output: `Tool ${block.name} failed: ${(err as Error).message}` };
         }
+        timer?.step(`tool.${block.name}`);
 
         toolResultBlocks.push({
           type: "tool_result",
