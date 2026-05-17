@@ -59,6 +59,23 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
                 {describeHoursForPrompt(business.hours)}
               </pre>
             </Card>
+
+            {business.intakeQuestions && business.intakeQuestions.length > 0 && (
+              <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+                <h2 className="font-semibold">Booking intake</h2>
+                <p className="text-xs text-muted-foreground">
+                  The receptionist asks these before booking an appointment.
+                </p>
+                <ol className="flex flex-col gap-1.5 text-sm">
+                  {business.intakeQuestions.map((q, i) => (
+                    <li key={q} className="text-muted-foreground">
+                      <span className="text-foreground font-medium mr-1">{i + 1}.</span>
+                      {q}
+                    </li>
+                  ))}
+                </ol>
+              </Card>
+            )}
           </div>
 
           <RecentCalls businessId={businessIdStr} />

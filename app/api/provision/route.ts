@@ -119,13 +119,15 @@ export async function POST(req: Request) {
     websiteMarkdown,
   };
 
-  // Step 5: generate system prompt
+  // Step 5: generate system prompt, service menu, and intake questions
   let systemPrompt: string;
   let serviceMenu: string[];
+  let intakeQuestions: string[];
   try {
     const out = await generateSystemPrompt(businessForPrompt, websiteMarkdown);
     systemPrompt = out.systemPrompt;
     serviceMenu = out.serviceMenu;
+    intakeQuestions = out.intakeQuestions;
   } catch (err) {
     return Response.json(
       { error: `System prompt generation failed: ${(err as Error).message}` },
@@ -172,6 +174,7 @@ export async function POST(req: Request) {
     ...businessForPrompt,
     systemPrompt,
     serviceMenu,
+    intakeQuestions,
     agentPhoneAgentId: agentId!,
     agentPhoneNumberId: numberId!,
     agentPhoneNumber: phoneNumber!,

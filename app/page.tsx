@@ -21,14 +21,15 @@ export default async function Home() {
 
   return (
     <div className="flex flex-1 flex-col items-center px-6 py-16 sm:py-24">
-      <section className="w-full max-w-2xl flex flex-col items-center text-center gap-4 mb-10">
+      <section className="w-full max-w-5xl flex flex-col items-center text-center gap-4 mb-10">
+        <span className="font-mono text-sm text-primary italic">// URL to Phone</span>
         <h1
           className="text-4xl sm:text-5xl font-semibold tracking-tight"
           style={{ fontFamily: "var(--font-heading)" }}
         >
           A phone receptionist in 60 seconds.
         </h1>
-        <p className="text-base sm:text-lg text-muted-foreground max-w-xl">
+        <p className="text-base text-muted-foreground max-w-xl">
           Paste a Google Maps URL. We&apos;ll read your business, design a custom AI receptionist,
           and provision a real US phone number.
         </p>
@@ -45,9 +46,9 @@ export default async function Home() {
       </section>
 
       {businesses.length > 0 && (
-        <section className="w-full max-w-2xl mt-16">
+        <section className="w-full max-w-2xl mt-46">
           <h2
-            className="text-xl font-semibold mb-4"
+            className="text-xl font-semibold mb-2"
             style={{ fontFamily: "var(--font-heading)" }}
           >
             Your businesses
@@ -55,7 +56,7 @@ export default async function Home() {
           <div className="grid gap-3">
             {businesses.map((b) => (
               <Link key={b._id.toString()} href={`/business/${b._id.toString()}`}>
-                <Card className="p-4 hover:bg-accent/40 transition-colors">
+                <Card className="p-4 hover:bg-accent transition-no">
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0">
                       <div className="font-medium truncate">{b.name}</div>

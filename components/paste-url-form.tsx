@@ -52,8 +52,8 @@ export function PasteUrlForm() {
   }
 
   return (
-    <div className="w-full max-w-2xl">
-      <form onSubmit={onSubmit} className="flex flex-col sm:flex-row gap-3">
+    <div className="w-full max-w-120">
+      <form onSubmit={onSubmit} className="flex flex-col sm:flex-row gap-3 relative">
         <Input
           type="url"
           required
@@ -61,9 +61,9 @@ export function PasteUrlForm() {
           onChange={(e) => setUrl(e.target.value)}
           placeholder="Paste a Google Maps URL…"
           disabled={submitting}
-          className="flex-1 h-12 text-base"
+          className="flex-1 h-12 text-base rounded-full pl-5"
         />
-        <Button type="submit" disabled={submitting} className="h-12 px-6">
+        <Button type="submit" disabled={submitting} className="h-10 px-6 absolute right-1 top-1 rounded-full">
           {submitting ? "Provisioning…" : "Get a number"}
         </Button>
       </form>

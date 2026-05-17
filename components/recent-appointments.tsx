@@ -12,6 +12,7 @@ type Appointment = {
   startTime: string;
   durationMinutes: number;
   status: "booked" | "cancelled";
+  intakeAnswers: Record<string, string> | null;
 };
 
 // Mirrors lib/dates.ts but inlined for the client.
@@ -93,6 +94,16 @@ export function RecentAppointments({ businessId }: { businessId: string }) {
               </div>
               <div className="text-xs text-muted-foreground truncate">{a.service}</div>
               <div className="text-xs text-muted-foreground">{formatInTz(a.startTime, timezone)}</div>
+              {a.intakeAnswers && Object.keys(a.intakeAnswers).length > 0 && (
+                <dl className="mt-1.5 pt-1.5 border-t border-border/60 flex flex-col gap-0.5 text-xs">
+                  {Object.entries(a.intakeAnswers).map(([q, ans]) => (
+                    <div key={q} className="flex flex-col">
+                      <dt className="text-muted-foreground">{q}</dt>
+                      <dd className="text-foreground">{ans}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
             </li>
           ))}
         </ul>

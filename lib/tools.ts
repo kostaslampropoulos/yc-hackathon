@@ -48,7 +48,7 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   {
     name: "book_appointment",
     description:
-      "Book an appointment for the caller. ALWAYS call check_availability first. ALWAYS spell back the caller's name to confirm before calling this. Returns a confirmation string.",
+      "Book an appointment for the caller. ALWAYS call check_availability first. ALWAYS spell back the caller's name to confirm before calling this. If the system prompt's 'Booking intake' section lists questions, collect ALL of those answers and pass them via the `intakeAnswers` field. Returns a confirmation string.",
     input_schema: {
       type: "object",
       properties: {
@@ -72,6 +72,12 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
         callerEmail: {
           type: "string",
           description: "Optional email if the caller offered one.",
+        },
+        intakeAnswers: {
+          type: "object",
+          description:
+            "Answers to the business's intake questions (defined under 'Booking intake' in the system prompt). Keys are the exact question text; values are the caller's verbal answer. Omit if no intake questions are configured.",
+          additionalProperties: { type: "string" },
         },
       },
       required: ["startTime", "service", "callerName"],
@@ -198,9 +204,23 @@ async function bookAppointment(
   const service = typeof input.service === "string" ? input.service : null;
   const callerName = typeof input.callerName === "string" ? input.callerName : null;
   const callerEmail = typeof input.callerEmail === "string" ? input.callerEmail : undefined;
+  const intakeAnswers = sanitizeIntakeAnswers(input.intakeAnswers);
 
   if (!startTimeStr || !service || !callerName) {
     return { output: "Missing startTime, service, or callerName. Please collect them and try again." };
+  }
+
+  // Nudge the model to gather intake first.
+  const required = ctx.business.intakeQuestions ?? [];
+  if (required.length > 0) {
+    const missing = required.filter((q) => !intakeAnswers || !intakeAnswers[q]);
+    if (missing.length > 0) {
+      return {
+        output:
+          `Missing intake answers for: ${missing.map((m) => `"${m}"`).join(", ")}. ` +
+          `Ask the caller these questions one at a time, then retry book_appointment with intakeAnswers populated using each question text as the key.`,
+      };
+    }
   }
 
   let startTime: Date;
@@ -230,6 +250,7 @@ async function bookAppointment(
     durationMinutes,
     status: "booked",
     source: "voice",
+    intakeAnswers: intakeAnswers && Object.keys(intakeAnswers).length > 0 ? intakeAnswers : undefined,
     createdAt: new Date(),
   };
   const insertResult = await appointments.insertOne({
@@ -286,4 +307,15 @@ async function updateCallerInfo(
 
 function cap(s: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
+function sanitizeIntakeAnswers(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k !== "string" || !k.trim()) continue;
+    if (typeof v !== "string" || !v.trim()) continue;
+    out[k.trim()] = v.trim();
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }

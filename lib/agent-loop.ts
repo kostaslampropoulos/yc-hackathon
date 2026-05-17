@@ -129,6 +129,18 @@ export async function runAgentLoop(
 function composeSystem(business: Business, callerContext: string): string {
   const today = todayInBusinessTz(business.timezone);
   const now = nowInBusinessTz(business.timezone);
+
+  const intake = business.intakeQuestions && business.intakeQuestions.length > 0
+    ? `
+
+## Booking intake
+Before calling \`book_appointment\`, ask the caller these questions (one at a time, naturally — don't read them as a list). Wait for each answer before moving on. Only ask when the caller is actually booking, not for general inquiries.
+
+${business.intakeQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")}
+
+When you call \`book_appointment\`, pass the answers as the \`intakeAnswers\` field, keyed by the question text exactly as written above.`
+    : "";
+
   return `${business.systemPrompt}
 
 ## Current context
@@ -137,5 +149,5 @@ function composeSystem(business: Business, callerContext: string): string {
 - Business timezone: ${business.timezone}
 
 ## About this caller
-${callerContext}`;
+${callerContext}${intake}`;
 }

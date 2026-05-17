@@ -2,10 +2,16 @@ import { anthropic, CLAUDE_MODEL } from "./anthropic";
 import { describeHoursForPrompt } from "./hours";
 import type { BusinessForPrompt } from "./types";
 
+export type PromptGenerationResult = {
+  systemPrompt: string;
+  serviceMenu: string[];
+  intakeQuestions: string[];
+};
+
 export async function generateSystemPrompt(
   business: BusinessForPrompt,
   websiteMarkdown: string | null,
-): Promise<{ systemPrompt: string; serviceMenu: string[] }> {
+): Promise<PromptGenerationResult> {
   const hoursText = describeHoursForPrompt(business.hours);
   const reviewsText = business.topReviews
     .slice(0, 5)
@@ -16,7 +22,7 @@ export async function generateSystemPrompt(
     ? `WEBSITE MARKDOWN (truncated):\n${websiteMarkdown.slice(0, 8000)}`
     : "WEBSITE MARKDOWN: (not available — base your prompt on Places data only)";
 
-  const userContent = `Generate a receptionist system prompt and service menu for this business.
+  const userContent = `Generate a receptionist system prompt, service menu, and booking intake questions for this business.
 
 BUSINESS:
 - Name: ${business.name}
@@ -41,7 +47,8 @@ INSTRUCTIONS:
 Return ONLY a single JSON object with this exact shape and no other text:
 {
   "systemPrompt": "<400-700 words, see rules below>",
-  "serviceMenu": ["<service 1>", "<service 2>", ...]
+  "serviceMenu": ["<service 1>", "<service 2>", ...],
+  "intakeQuestions": ["<question 1>", "<question 2>", ...]
 }
 
 systemPrompt rules:
@@ -61,7 +68,20 @@ systemPrompt rules:
 serviceMenu rules:
 - Array of 5-15 short strings.
 - Each string is a concrete service (e.g. "Haircut", "Beard trim", "Color"), not a category.
-- Infer from reviews, website, and business type. Be specific.`;
+- Infer from reviews, website, and business type. Be specific.
+
+intakeQuestions rules:
+- Array of 2-5 short questions a real receptionist for THIS business type would ask before booking.
+- Tailor to the business — examples:
+  - Vet: ["What kind of pet?", "What is the issue?", "How old is the pet?"]
+  - Plumber: ["What's the issue?", "Where in the house?", "How urgent is it?"]
+  - Dentist: ["Is this a checkup or a specific concern?", "Are you a current patient?", "When did you last visit?"]
+  - Hair salon: ["What service?", "Hair length and color?", "Any allergies?"]
+  - Restaurant reservation: ["How many people?", "Any dietary restrictions?", "Indoor or outdoor seating?"]
+  - Quick takeout / retail / no-appointment business: return empty array []
+- Each question is one sentence, plain conversational English, easy to answer on a voice call.
+- Do NOT include obvious things already collected separately: caller name, phone number, date, time.
+- Skip if the business doesn't take appointments at all (return []).`;
 
   const resp = await anthropic.messages.create({
     model: CLAUDE_MODEL,
@@ -74,7 +94,6 @@ serviceMenu rules:
     ],
   });
 
-  // Concatenate text blocks.
   let text = "";
   for (const block of resp.content) {
     if (block.type === "text") {
@@ -86,18 +105,26 @@ serviceMenu rules:
   if (!parsed || typeof parsed.systemPrompt !== "string" || !Array.isArray(parsed.serviceMenu)) {
     throw new Error(`Claude did not return valid JSON: ${text.slice(0, 500)}`);
   }
+
+  const intakeQuestions = Array.isArray(parsed.intakeQuestions)
+    ? parsed.intakeQuestions.filter((q: unknown): q is string => typeof q === "string" && q.trim().length > 0).slice(0, 5)
+    : [];
+
   return {
     systemPrompt: parsed.systemPrompt,
     serviceMenu: parsed.serviceMenu.filter((s: unknown): s is string => typeof s === "string"),
+    intakeQuestions,
   };
 }
 
-function extractJson(text: string): { systemPrompt: string; serviceMenu: string[] } | null {
-  // Try to find the first '{' and parse from there.
+function extractJson(text: string): {
+  systemPrompt: string;
+  serviceMenu: string[];
+  intakeQuestions?: string[];
+} | null {
   const start = text.indexOf("{");
   if (start === -1) return null;
 
-  // Try greedy parse first.
   for (let end = text.lastIndexOf("}"); end > start; end = text.lastIndexOf("}", end - 1)) {
     const candidate = text.slice(start, end + 1);
     try {

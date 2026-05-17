@@ -41,6 +41,10 @@ export type Business = {
 
   systemPrompt: string;
   serviceMenu: string[];
+  // 2-5 short questions the receptionist should ask before booking an appointment.
+  // Tailored to the business type (vet → "what kind of pet", plumber → "what's the issue", etc.).
+  // Empty array if the business type doesn't need intake (e.g. quick takeout).
+  intakeQuestions: string[];
 
   agentPhoneAgentId: string;
   agentPhoneNumberId: string;
@@ -57,6 +61,7 @@ export type BusinessForPrompt = Omit<
   Business,
   | "systemPrompt"
   | "serviceMenu"
+  | "intakeQuestions"
   | "agentPhoneAgentId"
   | "agentPhoneNumberId"
   | "agentPhoneNumber"
@@ -119,5 +124,7 @@ export type Appointment = {
   durationMinutes: number;
   status: "booked" | "cancelled";
   source: "voice";
+  // Answers to Business.intakeQuestions, keyed by the question text the agent asked.
+  intakeAnswers?: Record<string, string>;
   createdAt: Date;
 };

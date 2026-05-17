@@ -41,6 +41,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/business/[id]/a
       startTime: a.startTime,
       durationMinutes: a.durationMinutes,
       status: a.status,
+      intakeAnswers: a.intakeAnswers ?? null,
     })),
   });
 }

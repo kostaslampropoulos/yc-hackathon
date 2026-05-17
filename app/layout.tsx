@@ -5,6 +5,7 @@ import { ClerkProvider, SignInButton, SignUpButton, Show, UserButton } from "@cl
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import PixelFire from "@/components/pixel-fire";
 
 const merriweatherHeading = Merriweather({ subsets: ["latin"], variable: "--font-heading", weight: ["400", "700"] });
 
@@ -45,9 +46,14 @@ export default function RootLayout({
         )}
       >
         <body className="min-h-full flex flex-col bg-background text-foreground">
-          <header className="flex items-center justify-between px-6 py-4 border-b border-border">
+          {/* Fixed fire layer, sticks on scroll */}
+          <div className="fixed inset-0 z-0 pointer-events-none opacity-10">
+            <PixelFire color="#013220" pixelSize={4} fps={30} />
+          </div>
+
+          <header className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-border">
             <Link href="/" className="font-semibold tracking-tight text-lg" style={{ fontFamily: "var(--font-heading)" }}>
-              Receptionist
+              Fireside
             </Link>
             <div className="flex items-center gap-3">
               <Show when="signed-out">
@@ -65,7 +71,7 @@ export default function RootLayout({
               </Show>
             </div>
           </header>
-          <main className="flex flex-1 flex-col">{children}</main>
+          <main className="relative z-10 flex flex-1 flex-col">{children}</main>
           <Toaster richColors closeButton />
         </body>
       </html>
