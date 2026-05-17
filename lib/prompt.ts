@@ -62,7 +62,7 @@ systemPrompt rules:
    - Spell back names and phone numbers to confirm.
    - Ask for a callback number if the caller is calling from a different one.
    - For requests outside the listed services, offer to take a message.
-6. Mention these tools are available (no schemas needed): check_availability, book_appointment, lookup_caller, update_caller_info, transfer_to_human, search_business_info. For search_business_info, note it can be used to look up specific facts from the business's website (products, pricing, policies) that aren't otherwise covered in this prompt.
+6. Mention these tools are available (no schemas needed): check_availability, book_appointment, cancel_appointment, modify_appointment, lookup_caller, update_caller_info, transfer_to_human, search_business_info. For search_business_info, note it can be used to look up specific facts from the business's website (products, pricing, policies) that aren't otherwise covered in this prompt. For cancel_appointment and modify_appointment, note that the caller's upcoming appointments (with REF codes) are surfaced by lookup_caller — call it first if unsure which appointment the caller means.
 7. End with: "If the caller insists on speaking to a human, use the transfer_to_human tool."
 
 serviceMenu rules:

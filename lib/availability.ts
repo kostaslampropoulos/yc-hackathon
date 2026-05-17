@@ -1,5 +1,5 @@
 import type { Business, Appointment } from "./types";
-import type { Collection } from "mongodb";
+import type { Collection, ObjectId } from "mongodb";
 import {
   dayOfWeekForDateStr,
   parseHHMM,
@@ -107,17 +107,20 @@ export async function findNextOpenSlots(
 }
 
 // Re-check that a specific start..end UTC range is still free.
+// excludeId lets modify_appointment skip the appointment being moved (so it doesn't conflict with itself).
 export async function isSlotAvailable(
   business: Business,
   startTime: Date,
   endTime: Date,
   appointmentsCollection: AppointmentsCollection,
+  excludeId?: ObjectId,
 ): Promise<boolean> {
   const conflict = await appointmentsCollection.findOne({
     businessId: business._id,
     status: "booked",
     startTime: { $lt: endTime },
     endTime: { $gt: startTime },
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
   });
   return !conflict;
 }

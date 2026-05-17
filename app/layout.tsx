@@ -22,7 +22,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Receptionist",
+  title: "Fireside - AI Receptionist for Local Businesses",
   description: "Spin up an AI receptionist for any local business in 60 seconds.",
 };
 
