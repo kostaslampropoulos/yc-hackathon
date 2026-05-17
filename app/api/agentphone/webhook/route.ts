@@ -63,9 +63,15 @@ export async function POST(req: Request) {
   if (!skipVerify) {
     const ok = verifyHmac(rawBody, signature, timestamp, secret!);
     if (!ok) {
+      // Peek at the event type even though HMAC failed, for diagnostics.
+      let evt = "unknown";
+      try {
+        evt = (JSON.parse(rawBody) as { event?: string }).event ?? "unknown";
+      } catch {
+        // ignore
+      }
       console.warn(
-        `[webhook] HMAC verification FAILED. To debug, set WEBHOOK_SKIP_VERIFY=true in .env.local and try again.` +
-          ` bodyPreview=${rawBody.slice(0, 200)}`,
+        `[webhook] HMAC FAILED for event=${evt}. Set WEBHOOK_SKIP_VERIFY=true to bypass. bodyPreview=${rawBody.slice(0, 200)}`,
       );
       return new Response("Invalid signature", { status: 401 });
     }
