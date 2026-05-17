@@ -1,5 +1,5 @@
 import { MongoClient, type Db, type Collection } from "mongodb";
-import type { Business } from "./types";
+import type { Business, Caller, Conversation, Appointment } from "./types";
 
 const dbName = process.env.MONGODB_DB_NAME || "receptionist";
 
@@ -14,11 +14,7 @@ function getClientPromise(): Promise<MongoClient> {
     throw new Error("MONGODB_URI is not set");
   }
   const promise = new MongoClient(uri).connect();
-  if (process.env.NODE_ENV !== "production") {
-    globalThis.__mongoClientPromise = promise;
-  } else {
-    globalThis.__mongoClientPromise = promise;
-  }
+  globalThis.__mongoClientPromise = promise;
   return promise;
 }
 
@@ -27,19 +23,71 @@ export async function getDb(): Promise<Db> {
   return client.db(dbName);
 }
 
-let indexesEnsured = false;
+const indexesEnsured = {
+  businesses: false,
+  callers: false,
+  conversations: false,
+  appointments: false,
+};
 
 export async function getBusinesses(): Promise<Collection<Business>> {
   const db = await getDb();
   const collection = db.collection<Business>("businesses");
-  if (!indexesEnsured) {
-    indexesEnsured = true;
+  if (!indexesEnsured.businesses) {
+    indexesEnsured.businesses = true;
     await Promise.all([
       collection.createIndex({ placeId: 1 }, { unique: true }),
       collection.createIndex({ ownerId: 1 }),
     ]).catch((err) => {
-      console.warn("[mongo] index creation failed (will retry next call):", err);
-      indexesEnsured = false;
+      console.warn("[mongo] businesses index creation failed:", err);
+      indexesEnsured.businesses = false;
+    });
+  }
+  return collection;
+}
+
+export async function getCallers(): Promise<Collection<Caller>> {
+  const db = await getDb();
+  const collection = db.collection<Caller>("callers");
+  if (!indexesEnsured.callers) {
+    indexesEnsured.callers = true;
+    await collection
+      .createIndex({ businessId: 1, phone: 1 }, { unique: true })
+      .catch((err) => {
+        console.warn("[mongo] callers index creation failed:", err);
+        indexesEnsured.callers = false;
+      });
+  }
+  return collection;
+}
+
+export async function getConversations(): Promise<Collection<Conversation>> {
+  const db = await getDb();
+  const collection = db.collection<Conversation>("conversations");
+  if (!indexesEnsured.conversations) {
+    indexesEnsured.conversations = true;
+    await Promise.all([
+      collection.createIndex({ callId: 1 }, { unique: true }),
+      collection.createIndex({ businessId: 1, startedAt: -1 }),
+    ]).catch((err) => {
+      console.warn("[mongo] conversations index creation failed:", err);
+      indexesEnsured.conversations = false;
+    });
+  }
+  return collection;
+}
+
+export async function getAppointments(): Promise<Collection<Appointment>> {
+  const db = await getDb();
+  const collection = db.collection<Appointment>("appointments");
+  if (!indexesEnsured.appointments) {
+    indexesEnsured.appointments = true;
+    await Promise.all([
+      collection.createIndex({ businessId: 1, startTime: 1 }),
+      collection.createIndex({ callerId: 1, startTime: 1 }),
+    ]).catch((err) => {
+      console.warn("[mongo] appointments index creation failed:", err);
+      indexesEnsured.appointments = false;
     });
   }
   return collection;

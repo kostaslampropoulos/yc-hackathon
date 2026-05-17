@@ -1,4 +1,5 @@
 import type { ObjectId } from "mongodb";
+import type Anthropic from "@anthropic-ai/sdk";
 
 export type DayHours = Array<{ open: string; close: string }>;
 
@@ -63,3 +64,59 @@ export type BusinessForPrompt = Omit<
   | "createdAt"
   | "updatedAt"
 >;
+
+export type AnthropicMessage = Anthropic.MessageParam;
+
+export type Caller = {
+  _id: ObjectId;
+  businessId: ObjectId;
+  phone: string;
+  callbackPhone?: string;
+  name?: string;
+  email?: string;
+  notes?: string;
+  appointmentCount: number;
+  callCount: number;
+  lastCalledAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type TranscriptEntry = { role: "user" | "assistant"; text: string; ts: Date };
+
+export type Conversation = {
+  _id: ObjectId;
+  callId: string;
+  businessId: ObjectId;
+  callerId: ObjectId;
+  callerPhone: string;
+  toNumber: string;
+  messages: AnthropicMessage[];
+  transcript: TranscriptEntry[];
+  status: "active" | "ended";
+  startedAt: Date;
+  endedAt?: Date;
+  summary?: string;
+  userSentiment?: string;
+  durationSeconds?: number;
+  bookingMade?: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type Appointment = {
+  _id: ObjectId;
+  businessId: ObjectId;
+  callerId: ObjectId;
+  conversationId: ObjectId;
+  callerName: string;
+  callerPhone: string;
+  callerEmail?: string;
+  service: string;
+  startTime: Date;
+  endTime: Date;
+  durationMinutes: number;
+  status: "booked" | "cancelled";
+  source: "voice";
+  createdAt: Date;
+};
