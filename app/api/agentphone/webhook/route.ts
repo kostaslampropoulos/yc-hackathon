@@ -184,10 +184,10 @@ async function handleVoiceTurn(
   }
   timer.step("db.findOrCreateConversation");
 
-  // Append the user's utterance.
+  // Append the user's utterance (Gemini Content shape).
   const userText = (transcript ?? "").trim();
   if (userText) {
-    conversation.messages.push({ role: "user", content: userText });
+    conversation.messages.push({ role: "user", parts: [{ text: userText }] });
     conversation.transcript.push({ role: "user", text: userText, ts: now });
   }
 

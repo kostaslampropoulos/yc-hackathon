@@ -1,5 +1,5 @@
 import type { ObjectId } from "mongodb";
-import type Anthropic from "@anthropic-ai/sdk";
+import type { Content } from "@google/genai";
 
 export type DayHours = Array<{ open: string; close: string }>;
 
@@ -65,7 +65,8 @@ export type BusinessForPrompt = Omit<
   | "updatedAt"
 >;
 
-export type AnthropicMessage = Anthropic.MessageParam;
+// Voice agent uses Gemini; messages stored in Gemini's native Content shape.
+export type AgentMessage = Content;
 
 export type Caller = {
   _id: ObjectId;
@@ -91,7 +92,7 @@ export type Conversation = {
   callerId: ObjectId;
   callerPhone: string;
   toNumber: string;
-  messages: AnthropicMessage[];
+  messages: AgentMessage[];
   transcript: TranscriptEntry[];
   status: "active" | "ended";
   startedAt: Date;
