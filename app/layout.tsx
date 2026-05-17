@@ -51,8 +51,8 @@ export default function RootLayout({
             <PixelFire color="#013220" pixelSize={4} fps={30} />
           </div>
 
-          <header className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-border">
-            <Link href="/" className="font-semibold tracking-tight text-lg" style={{ fontFamily: "var(--font-heading)" }}>
+          <header className="relative z-10 flex items-center justify-between px-6 py-4">
+            <Link href="/" className="font-semibold tracking-tight text-lg hover:opacity-60 cursor-pointer transition-all" style={{ fontFamily: "var(--font-heading)" }}>
               Fireside
             </Link>
             <div className="flex items-center gap-3">
