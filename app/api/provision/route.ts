@@ -1,3 +1,4 @@
+import { ObjectId } from "mongodb";
 import { auth } from "@clerk/nextjs/server";
 import { provisionRequestSchema } from "@/lib/validators";
 import { resolveMapsUrlToPlaceId, getPlaceDetails, type PlaceDetails } from "@/lib/places";
@@ -6,6 +7,7 @@ import { normalizeHours } from "@/lib/hours";
 import { generateSystemPrompt } from "@/lib/prompt";
 import { createAgent, provisionNumber, attachNumberToAgent, deleteAgent } from "@/lib/agentphone";
 import { getBusinesses } from "@/lib/mongo";
+import { indexBusinessWebsite, isMossConfigured } from "@/lib/moss";
 import type { Business, BusinessForPrompt, TopReview } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -182,9 +184,10 @@ export async function POST(req: Request) {
     updatedAt: now,
   };
 
+  let insertedId: string;
   try {
     const result = await businesses.insertOne(doc as Business);
-    return Response.json({ businessId: result.insertedId.toString() });
+    insertedId = result.insertedId.toString();
   } catch (err) {
     // Mongo failed — log orphans for cleanup; surfaces in error message.
     console.error(
@@ -198,4 +201,24 @@ export async function POST(req: Request) {
       { status: 500 },
     );
   }
+
+  // Step 8: index website content into Moss for in-call search (best-effort, non-blocking).
+  if (isMossConfigured() && doc.websiteMarkdown) {
+    const businessForIndex = { ...doc, _id: new ObjectId(insertedId) } as Business;
+    indexBusinessWebsite(businessForIndex)
+      .then(async (chunkCount) => {
+        if (chunkCount > 0) {
+          await businesses.updateOne(
+            { _id: businessForIndex._id },
+            { $set: { mossIndexedAt: new Date(), mossChunkCount: chunkCount } },
+          );
+          console.log(`[provision] moss indexed ${chunkCount} chunks for business ${insertedId}`);
+        }
+      })
+      .catch((err) => {
+        console.warn(`[provision] moss indexing failed for business ${insertedId}:`, (err as Error).message);
+      });
+  }
+
+  return Response.json({ businessId: insertedId });
 }

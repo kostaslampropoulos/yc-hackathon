@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getBusinesses } from "@/lib/mongo";
 import { Card } from "@/components/ui/card";
 import { CopyButton } from "@/components/copy-button";
+import { IndexBusinessButton } from "@/components/index-business-button";
 import { RecentCalls } from "@/components/recent-calls";
 import { RecentAppointments } from "@/components/recent-appointments";
 import { describeHoursForPrompt } from "@/lib/hours";
@@ -30,7 +31,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="flex flex-1 flex-col items-center px-6 py-12 sm:py-16">
-      <div className="w-full max-w-6xl flex flex-col gap-6">
+      <div className="w-full max-w-6xl flex flex-col gap-5">
         <header className="flex flex-col gap-2">
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight font-heading">
             {business.name}
@@ -38,8 +39,8 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           <p className="text-muted-foreground">{business.address}</p>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="flex flex-col gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="flex flex-col gap-5">
             <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
               <div className="text-sm text-muted-foreground">Your receptionist&apos;s phone number</div>
               <div className="flex items-center justify-between flex-wrap gap-3">
@@ -76,6 +77,30 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
                 </ol>
               </Card>
             )}
+
+            <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
+              <h2 className="font-semibold">Knowledge base</h2>
+              {business.mossIndexedAt && business.mossChunkCount ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Indexed {business.mossChunkCount} chunks from the website. The receptionist
+                    can search this during calls.
+                  </p>
+                  <IndexBusinessButton businessId={businessIdStr} alreadyIndexed />
+                </>
+              ) : business.websiteMarkdown ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Website scraped but not indexed yet.
+                  </p>
+                  <IndexBusinessButton businessId={businessIdStr} alreadyIndexed={false} />
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No website content available to index.
+                </p>
+              )}
+            </Card>
           </div>
 
           <RecentCalls businessId={businessIdStr} />

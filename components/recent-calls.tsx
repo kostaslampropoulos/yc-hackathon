@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { PhoneIncoming, CalendarCheck, Loader2 } from "lucide-react";
+import { CalendarCheck, Loader2 } from "lucide-react";
 
 type Call = {
   id: string;
@@ -64,7 +64,6 @@ export function RecentCalls({ businessId }: { businessId: string }) {
     <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold flex items-center gap-2">
-          <PhoneIncoming className="w-4 h-4" />
           Recent calls
         </h2>
         <span className="text-xs text-muted-foreground">Live</span>

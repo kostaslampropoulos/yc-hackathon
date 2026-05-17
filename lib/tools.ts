@@ -9,6 +9,7 @@ import {
   addDaysToDateStr,
 } from "./dates";
 import { buildCallerContext } from "./caller-context";
+import { searchBusinessInfo } from "./moss";
 
 export type ToolContext = {
   business: Business;
@@ -115,6 +116,21 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
       "Transfer the call to a human at the business. Use only if the caller specifically asks for a human OR the request is clearly outside what you can handle.",
     input_schema: { type: "object", properties: {}, required: [] },
   },
+  {
+    name: "search_business_info",
+    description:
+      "Search the business's website for specific information the caller asked about — products, policies, pricing, services not covered in the system prompt. Use ONLY for specific factual questions you can't already answer. Do NOT use for greetings, the booking flow, hours, or anything already in the system prompt.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "The caller's question or key search terms.",
+        },
+      },
+      required: ["query"],
+    },
+  },
 ];
 
 export async function executeTool(
@@ -133,6 +149,8 @@ export async function executeTool(
       return updateCallerInfo(input, ctx);
     case "transfer_to_human":
       return { output: "Transferring now.", transfer: true };
+    case "search_business_info":
+      return searchBusinessInfoTool(input, ctx);
     default:
       return { output: `Unknown tool: ${name}` };
   }
@@ -303,6 +321,18 @@ async function updateCallerInfo(
 
   await ctx.db.collection<Caller>("callers").updateOne({ _id: ctx.caller._id }, { $set: set });
   return { output: "Updated.", callerUpdated: set };
+}
+
+async function searchBusinessInfoTool(
+  input: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<ToolExecutionResult> {
+  const query = typeof input.query === "string" ? input.query.trim() : "";
+  if (!query) {
+    return { output: "Please provide a search query." };
+  }
+  const text = await searchBusinessInfo(ctx.business, query);
+  return { output: text };
 }
 
 function cap(s: string): string {

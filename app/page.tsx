@@ -56,7 +56,7 @@ export default async function Home() {
           <div className="grid gap-3">
             {businesses.map((b) => (
               <Link key={b._id.toString()} href={`/business/${b._id.toString()}`}>
-                <Card className="p-4 hover:bg-accent transition-no">
+                <Card className="p-4 hover:bg-accent transition-all rounded-lg">
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0">
                       <div className="font-medium truncate">{b.name}</div>

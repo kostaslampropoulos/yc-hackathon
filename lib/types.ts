@@ -53,6 +53,10 @@ export type Business = {
   rawPlaceDetails: object;
   websiteMarkdown: string | null;
 
+  // Moss knowledge-base index status (optional — only set if Moss indexing succeeded).
+  mossIndexedAt?: Date;
+  mossChunkCount?: number;
+
   createdAt: Date;
   updatedAt: Date;
 };

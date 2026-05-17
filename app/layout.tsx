@@ -47,8 +47,14 @@ export default function RootLayout({
       >
         <body className="min-h-full flex flex-col bg-background text-foreground">
           {/* Fixed fire layer, sticks on scroll */}
-          <div className="fixed inset-0 z-0 pointer-events-none opacity-10">
-            <PixelFire color="#013220" pixelSize={4} fps={30} />
+          <div
+            className="fixed inset-0 z-0 pointer-events-none opacity-20"
+            style={{
+              maskImage: 'linear-gradient(to top, black 0%, black 40%, transparent 90%)',
+              WebkitMaskImage: 'linear-gradient(to top, black 0%, black 40%, transparent 90%)',
+            }}
+          >
+            <PixelFire color="#007A55" pixelSize={4} fps={30} />
           </div>
 
           <header className="relative z-10 flex items-center justify-between px-6 py-4">

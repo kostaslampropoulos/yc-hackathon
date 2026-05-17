@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Calendar } from "lucide-react";
 
 type Appointment = {
   id: string;
@@ -73,7 +72,6 @@ export function RecentAppointments({ businessId }: { businessId: string }) {
     <Card className="p-6 flex flex-col gap-3 border-0 bg-muted">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold flex items-center gap-2">
-          <Calendar className="w-4 h-4" />
           Upcoming appointments
         </h2>
         <span className="text-xs text-muted-foreground">{timezone}</span>
