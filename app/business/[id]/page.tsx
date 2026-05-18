@@ -5,6 +5,7 @@ import { getBusinesses } from "@/lib/mongo";
 import { Card } from "@/components/ui/card";
 import { CopyButton } from "@/components/copy-button";
 import { IndexBusinessButton } from "@/components/index-business-button";
+import { EnrichBusinessButton } from "@/components/enrich-business-button";
 import { RecentCalls } from "@/components/recent-calls";
 import { RecentAppointments } from "@/components/recent-appointments";
 import { describeHoursForPrompt } from "@/lib/hours";
@@ -28,6 +29,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
   }
 
   const businessIdStr = business._id.toString();
+  const browserUseEnabled = !!process.env.BROWSER_USE_API_KEY;
 
   return (
     <div className="flex flex-1 flex-col items-center px-6 py-12 sm:py-16">
@@ -99,6 +101,17 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
                 <p className="text-xs text-muted-foreground">
                   No website content available to index.
                 </p>
+              )}
+              {browserUseEnabled && business.website && (
+                <>
+                  <div className="h-px bg-border my-1" />
+                  <p className="text-xs text-muted-foreground">
+                    Deeper multi-page research via browser-use. Regenerates the receptionist&apos;s
+                    prompt, services, and intake questions, and re-indexes the knowledge base.
+                    Takes ~1-2 minutes and overwrites the curated content.
+                  </p>
+                  <EnrichBusinessButton businessId={businessIdStr} />
+                </>
               )}
             </Card>
           </div>
