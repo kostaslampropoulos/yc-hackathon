@@ -1,5 +1,5 @@
 import type { ObjectId } from "mongodb";
-import type { Content } from "@google/genai";
+import type { StoredContent } from "./ai";
 
 export type DayHours = Array<{ open: string; close: string }>;
 
@@ -75,7 +75,7 @@ export type BusinessForPrompt = Omit<
 >;
 
 // Voice agent uses Gemini; messages stored in Gemini's native Content shape.
-export type AgentMessage = Content;
+export type AgentMessage = StoredContent;
 
 export type Caller = {
   _id: ObjectId;

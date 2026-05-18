@@ -1,7 +1,7 @@
-import type { Content, FunctionCall, Part } from "@google/genai";
+import { streamText, stepCountIs } from "ai";
 import type { Db } from "mongodb";
-import { getGemini, GEMINI_MODEL, getGeminiTools, toGeminiMessages } from "./gemini";
-import { executeTool } from "./tools";
+import { getModel, GEMINI_MODEL, toModelMessages, fromResponseMessages, type StoredContent } from "./ai";
+import { buildTools, type LoopState } from "./tools";
 import { todayInBusinessTz, nowInBusinessTz } from "./dates";
 import type { StepTimer } from "./timing";
 import type { Business, Caller, Conversation } from "./types";
@@ -30,100 +30,58 @@ export async function runAgentLoop(
 ): Promise<AgentResult> {
   const { timer, onTextChunk } = options;
   const system = composeSystem(business, callerContext);
-  const messages: Content[] = toGeminiMessages(conversation.messages as unknown[]);
+  const stored = (conversation.messages as StoredContent[]) ?? [];
+  const messages = toModelMessages(stored);
 
-  const ai = getGemini();
-  const tools = [{ functionDeclarations: getGeminiTools() }];
+  const loopState: LoopState = { transfer: false, bookingMade: false };
+  const tools = buildTools({ business, caller, conversation, db }, loopState);
 
-  const result: AgentResult = { text: "", transfer: false, bookingMade: false };
-
-  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-    const stream = await ai.models.generateContentStream({
-      model: GEMINI_MODEL,
-      contents: messages,
-      config: {
-        systemInstruction: system,
-        tools,
-        maxOutputTokens: 400,
-        thinkingConfig: { thinkingBudget: 0 },
+  const result = streamText({
+    model: getModel(),
+    system,
+    messages,
+    tools,
+    stopWhen: stepCountIs(MAX_ITERATIONS),
+    maxOutputTokens: 400,
+    providerOptions: {
+      google: { thinkingConfig: { thinkingBudget: 0 } },
+    },
+    experimental_telemetry: {
+      isEnabled: true,
+      functionId: "agent-loop",
+      metadata: {
+        businessId: business._id.toString(),
+        callerId: caller._id.toString(),
+        callId: conversation.callId,
+        model: GEMINI_MODEL,
       },
-    });
-
-    // Accumulate streamed parts into a single assistant turn.
-    let turnText = "";
-    const functionCalls: FunctionCall[] = [];
-    const accumulatedParts: Part[] = [];
-
-    for await (const chunk of stream) {
-      const parts = chunk.candidates?.[0]?.content?.parts ?? [];
-      for (const part of parts) {
-        if (typeof part.text === "string" && part.text.length > 0) {
-          turnText += part.text;
-          // Stream to caller (e.g., NDJSON to AgentPhone) as soon as available.
-          onTextChunk?.(part.text);
-        }
-        if (part.functionCall) {
-          functionCalls.push(part.functionCall);
-        }
-        // Preserve the entire part — keeps `thoughtSignature` (Gemini 2.5 requires it
-        // on functionCall parts when replayed in the next turn).
-        accumulatedParts.push(part);
+    },
+    onStepFinish: (step) => {
+      timer?.step(`gemini.step${step.stepNumber + 1}`);
+      for (const tc of step.toolCalls) {
+        timer?.step(`tool.${tc.toolName}`);
       }
+    },
+  });
+
+  // Drive interim text chunks from the full stream. NDJSON producer in the
+  // webhook route buffers the most recent chunk and emits prior chunks as
+  // `interim: true`, so each delta we forward becomes one interim line.
+  for await (const ev of result.fullStream) {
+    if (ev.type === "text-delta" && ev.text.length > 0) {
+      onTextChunk?.(ev.text);
     }
-    timer?.step(`gemini.turn${iter + 1}`);
-
-    if (accumulatedParts.length > 0) {
-      messages.push({ role: "model", parts: accumulatedParts });
-    }
-
-    if (functionCalls.length > 0) {
-      // Run all tool calls in order, append their responses, loop again.
-      const toolResponseParts: Part[] = [];
-      for (const fc of functionCalls) {
-        const name = fc.name ?? "";
-        const input = (fc.args as Record<string, unknown>) ?? {};
-        let toolOut;
-        try {
-          toolOut = await executeTool(name, input, {
-            business,
-            caller,
-            conversation,
-            db,
-          });
-        } catch (err) {
-          toolOut = { output: `Tool ${name} failed: ${(err as Error).message}` };
-        }
-        timer?.step(`tool.${name}`);
-
-        toolResponseParts.push({
-          functionResponse: {
-            name,
-            response: { result: toolOut.output },
-          },
-        });
-
-        if (toolOut.transfer) result.transfer = true;
-        if (toolOut.bookingMade) result.bookingMade = true;
-      }
-      messages.push({ role: "user", parts: toolResponseParts });
-      continue;
-    }
-
-    // No function calls — final turn. Capture text and stop.
-    result.text = turnText.trim();
-    break;
   }
 
-  if (!result.text && result.transfer) {
-    result.text = "Connecting you to a team member now.";
-  }
-  if (!result.text) {
-    result.text = "Sorry, just a moment.";
-  }
+  const finalText = ((await result.text) ?? "").trim();
+  const response = await result.response;
+  conversation.messages = [...stored, ...fromResponseMessages(response.messages)] as Conversation["messages"];
 
-  conversation.messages = messages as unknown as Conversation["messages"];
+  let text = finalText;
+  if (!text && loopState.transfer) text = "Connecting you to a team member now.";
+  if (!text) text = "Sorry, just a moment.";
 
-  return result;
+  return { text, transfer: loopState.transfer, bookingMade: loopState.bookingMade };
 }
 
 function composeSystem(business: Business, callerContext: string): string {

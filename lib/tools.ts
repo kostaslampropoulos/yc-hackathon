@@ -1,5 +1,6 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { ObjectId, type Db } from "mongodb";
+import { tool } from "ai";
+import { z } from "zod";
 import type { Business, Caller, Conversation, Appointment } from "./types";
 import { getAvailableSlots, findNextOpenSlots, isSlotAvailable } from "./availability";
 import {
@@ -27,178 +28,163 @@ export type ToolExecutionResult = {
   callerUpdated?: Partial<Caller>;
 };
 
-export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
-  {
-    name: "check_availability",
-    description:
-      "Check available appointment slots for a specific date. Always call this before book_appointment. Returns open time slots in the business's local timezone.",
-    input_schema: {
-      type: "object",
-      properties: {
-        date: {
-          type: "string",
-          description:
-            "The date to check in YYYY-MM-DD format. Use today's date from the context if the caller says 'today', tomorrow's date if they say 'tomorrow', etc.",
-        },
-        durationMinutes: {
-          type: "number",
-          description: "Appointment length in minutes. Default 60.",
-        },
-      },
-      required: ["date"],
-    },
-  },
-  {
-    name: "book_appointment",
-    description:
-      "Book an appointment for the caller. ALWAYS call check_availability first. ALWAYS spell back the caller's name to confirm before calling this. If the system prompt's 'Booking intake' section lists questions, collect ALL of those answers and pass them via the `intakeAnswers` field. Returns a confirmation string.",
-    input_schema: {
-      type: "object",
-      properties: {
-        startTime: {
-          type: "string",
-          description:
-            "ISO datetime in business local time, e.g. 2026-05-23T11:00:00. Do NOT include a timezone suffix; the system will apply the business timezone.",
-        },
-        durationMinutes: {
-          type: "number",
-          description: "Length of appointment. Default 60.",
-        },
-        service: {
-          type: "string",
-          description: "The service being booked. Must be from the business's service menu.",
-        },
-        callerName: {
-          type: "string",
-          description: "Full name of the caller, confirmed verbally.",
-        },
-        callerEmail: {
-          type: "string",
-          description: "Optional email if the caller offered one.",
-        },
-        intakeAnswers: {
-          type: "object",
-          description:
-            "Answers to the business's intake questions (defined under 'Booking intake' in the system prompt). Keys are the exact question text; values are the caller's verbal answer. Omit if no intake questions are configured.",
-          additionalProperties: { type: "string" },
-        },
-      },
-      required: ["startTime", "service", "callerName"],
-    },
-  },
-  {
-    name: "lookup_caller",
-    description: "Look up what we know about the current caller. Useful for confirming details mid-call.",
-    input_schema: { type: "object", properties: {}, required: [] },
-  },
-  {
-    name: "update_caller_info",
-    description:
-      "Update what we know about the caller. Use after they tell you their name, email, or any preference you should remember for next time.",
-    input_schema: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        email: { type: "string" },
-        notes: {
-          type: "string",
-          description: "Free text about preferences, like 'allergic to ammonia' or 'prefers Mishi as stylist'.",
-        },
-        callbackPhone: {
-          type: "string",
-          description: "E.164 number if different from the calling number.",
-        },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "transfer_to_human",
-    description:
-      "Transfer the call to a human at the business. Use only if the caller specifically asks for a human OR the request is clearly outside what you can handle.",
-    input_schema: { type: "object", properties: {}, required: [] },
-  },
-  {
-    name: "cancel_appointment",
-    description:
-      "Cancel one of the caller's existing upcoming appointments. If you don't already know which appointment they mean, call lookup_caller first to see their upcoming bookings (with REF codes). If multiple appointments could match, ASK the caller to clarify before calling this — don't guess. Pass appointmentReference (the 6-character REF code from lookup_caller) when you have it; otherwise pass date/time/service criteria to disambiguate.",
-    input_schema: {
-      type: "object",
-      properties: {
-        appointmentReference: {
-          type: "string",
-          description: "6-character REF code from lookup_caller, e.g. 'A1B2C3'. Preferred when available.",
-        },
-        date: {
-          type: "string",
-          description: "YYYY-MM-DD of the appointment to cancel. Use only if you don't have the REF code.",
-        },
-        time: {
-          type: "string",
-          description: "Time the caller specified, e.g. '2:00 PM' or '14:00'. Use only to disambiguate.",
-        },
-        service: {
-          type: "string",
-          description: "Service name on the appointment. Use only to disambiguate.",
-        },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "modify_appointment",
-    description:
-      "Reschedule one of the caller's existing upcoming appointments to a new time. ALWAYS call check_availability for the new slot first. To change the service, cancel the appointment and book a new one instead — this tool only moves an appointment in time. Identify the existing appointment with appointmentReference if known, otherwise with date/time/service criteria.",
-    input_schema: {
-      type: "object",
-      properties: {
-        appointmentReference: {
-          type: "string",
-          description: "6-character REF code from lookup_caller. Preferred when available.",
-        },
-        date: {
-          type: "string",
-          description: "YYYY-MM-DD of the EXISTING appointment (for disambiguation, not the new date).",
-        },
-        time: {
-          type: "string",
-          description: "Time of the EXISTING appointment, e.g. '2:00 PM'. For disambiguation only.",
-        },
-        service: {
-          type: "string",
-          description: "Service name of the EXISTING appointment. For disambiguation only.",
-        },
-        newStartTime: {
-          type: "string",
-          description:
-            "New start time as ISO local datetime, e.g. 2026-05-23T16:00:00. No timezone suffix; the business timezone is applied.",
-        },
-        newDurationMinutes: {
-          type: "number",
-          description: "New length in minutes. Optional; defaults to the existing appointment's duration.",
-        },
-      },
-      required: ["newStartTime"],
-    },
-  },
-  {
-    name: "search_business_info",
-    description:
-      "Search the business's website for specific information the caller asked about — products, policies, pricing, services not covered in the system prompt. Use ONLY for specific factual questions you can't already answer. Do NOT use for greetings, the booking flow, hours, or anything already in the system prompt.",
-    input_schema: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "The caller's question or key search terms.",
-        },
-      },
-      required: ["query"],
-    },
-  },
-];
+/** Mutable signals captured during a single agent-loop run. */
+export type LoopState = {
+  transfer: boolean;
+  bookingMade: boolean;
+};
 
-export async function executeTool(
+/**
+ * Build the AI-SDK tool set for one request. Tools are closure-built so each
+ * `execute` can reach the request-scoped `ctx` and mutate `loopState` (which
+ * carries the `transfer` / `bookingMade` signals back to the caller).
+ */
+export function buildTools(ctx: ToolContext, loopState: LoopState) {
+  const run = async (name: string, input: Record<string, unknown>): Promise<string> => {
+    let r: ToolExecutionResult;
+    try {
+      r = await executeToolImpl(name, input, ctx);
+    } catch (err) {
+      return `Tool ${name} failed: ${(err as Error).message}`;
+    }
+    if (r.transfer) loopState.transfer = true;
+    if (r.bookingMade) loopState.bookingMade = true;
+    return r.output;
+  };
+
+  return {
+    check_availability: tool({
+      description:
+        "Check available appointment slots for a specific date. Always call this before book_appointment. Returns open time slots in the business's local timezone.",
+      inputSchema: z.object({
+        date: z
+          .string()
+          .describe(
+            "The date to check in YYYY-MM-DD format. Use today's date from the context if the caller says 'today', tomorrow's date if they say 'tomorrow', etc.",
+          ),
+        durationMinutes: z.number().describe("Appointment length in minutes. Default 60.").optional(),
+      }),
+      execute: async (input) => run("check_availability", input as Record<string, unknown>),
+    }),
+
+    book_appointment: tool({
+      description:
+        "Book an appointment for the caller. ALWAYS call check_availability first. ALWAYS spell back the caller's name to confirm before calling this. If the system prompt's 'Booking intake' section lists questions, collect ALL of those answers and pass them via the `intakeAnswers` field. Returns a confirmation string.",
+      inputSchema: z.object({
+        startTime: z
+          .string()
+          .describe(
+            "ISO datetime in business local time, e.g. 2026-05-23T11:00:00. Do NOT include a timezone suffix; the system will apply the business timezone.",
+          ),
+        durationMinutes: z.number().describe("Length of appointment. Default 60.").optional(),
+        service: z.string().describe("The service being booked. Must be from the business's service menu."),
+        callerName: z.string().describe("Full name of the caller, confirmed verbally."),
+        callerEmail: z.string().describe("Optional email if the caller offered one.").optional(),
+        intakeAnswers: z
+          .record(z.string(), z.string())
+          .describe(
+            "Answers to the business's intake questions (defined under 'Booking intake' in the system prompt). Keys are the exact question text; values are the caller's verbal answer. Omit if no intake questions are configured.",
+          )
+          .optional(),
+      }),
+      execute: async (input) => run("book_appointment", input as Record<string, unknown>),
+    }),
+
+    lookup_caller: tool({
+      description: "Look up what we know about the current caller. Useful for confirming details mid-call.",
+      inputSchema: z.object({}),
+      execute: async (input) => run("lookup_caller", input as Record<string, unknown>),
+    }),
+
+    update_caller_info: tool({
+      description:
+        "Update what we know about the caller. Use after they tell you their name, email, or any preference you should remember for next time.",
+      inputSchema: z.object({
+        name: z.string().optional(),
+        email: z.string().optional(),
+        notes: z
+          .string()
+          .describe("Free text about preferences, like 'allergic to ammonia' or 'prefers Mishi as stylist'.")
+          .optional(),
+        callbackPhone: z.string().describe("E.164 number if different from the calling number.").optional(),
+      }),
+      execute: async (input) => run("update_caller_info", input as Record<string, unknown>),
+    }),
+
+    transfer_to_human: tool({
+      description:
+        "Transfer the call to a human at the business. Use only if the caller specifically asks for a human OR the request is clearly outside what you can handle.",
+      inputSchema: z.object({}),
+      execute: async (input) => run("transfer_to_human", input as Record<string, unknown>),
+    }),
+
+    cancel_appointment: tool({
+      description:
+        "Cancel one of the caller's existing upcoming appointments. If you don't already know which appointment they mean, call lookup_caller first to see their upcoming bookings (with REF codes). If multiple appointments could match, ASK the caller to clarify before calling this — don't guess. Pass appointmentReference (the 6-character REF code from lookup_caller) when you have it; otherwise pass date/time/service criteria to disambiguate.",
+      inputSchema: z.object({
+        appointmentReference: z
+          .string()
+          .describe("6-character REF code from lookup_caller, e.g. 'A1B2C3'. Preferred when available.")
+          .optional(),
+        date: z
+          .string()
+          .describe("YYYY-MM-DD of the appointment to cancel. Use only if you don't have the REF code.")
+          .optional(),
+        time: z.string().describe("Time the caller specified, e.g. '2:00 PM' or '14:00'. Use only to disambiguate.").optional(),
+        service: z.string().describe("Service name on the appointment. Use only to disambiguate.").optional(),
+      }),
+      execute: async (input) => run("cancel_appointment", input as Record<string, unknown>),
+    }),
+
+    modify_appointment: tool({
+      description:
+        "Reschedule one of the caller's existing upcoming appointments to a new time. ALWAYS call check_availability for the new slot first. To change the service, cancel the appointment and book a new one instead — this tool only moves an appointment in time. Identify the existing appointment with appointmentReference if known, otherwise with date/time/service criteria.",
+      inputSchema: z.object({
+        appointmentReference: z.string().describe("6-character REF code from lookup_caller. Preferred when available.").optional(),
+        date: z
+          .string()
+          .describe("YYYY-MM-DD of the EXISTING appointment (for disambiguation, not the new date).")
+          .optional(),
+        time: z.string().describe("Time of the EXISTING appointment, e.g. '2:00 PM'. For disambiguation only.").optional(),
+        service: z.string().describe("Service name of the EXISTING appointment. For disambiguation only.").optional(),
+        newStartTime: z
+          .string()
+          .describe(
+            "New start time as ISO local datetime, e.g. 2026-05-23T16:00:00. No timezone suffix; the business timezone is applied.",
+          ),
+        newDurationMinutes: z
+          .number()
+          .describe("New length in minutes. Optional; defaults to the existing appointment's duration.")
+          .optional(),
+      }),
+      execute: async (input) => run("modify_appointment", input as Record<string, unknown>),
+    }),
+
+    search_business_info: tool({
+      description:
+        "Search the business's website for specific information the caller asked about — products, policies, pricing, services not covered in the system prompt. Use ONLY for specific factual questions you can't already answer. Do NOT use for greetings, the booking flow, hours, or anything already in the system prompt.",
+      inputSchema: z.object({
+        query: z.string().describe("The caller's question or key search terms."),
+      }),
+      execute: async (input) => run("search_business_info", input as Record<string, unknown>),
+    }),
+  };
+}
+
+// Kept exported for any debug/inspection callers; no longer the source of truth
+// for the model's view of tools (that's `buildTools`).
+export const TOOL_NAMES = [
+  "check_availability",
+  "book_appointment",
+  "lookup_caller",
+  "update_caller_info",
+  "transfer_to_human",
+  "cancel_appointment",
+  "modify_appointment",
+  "search_business_info",
+] as const;
+
+async function executeToolImpl(
   name: string,
   input: Record<string, unknown>,
   ctx: ToolContext,
