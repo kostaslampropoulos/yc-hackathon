@@ -27,7 +27,7 @@ export default async function Home() {
           className="text-4xl sm:text-5xl font-semibold tracking-tight"
           style={{ fontFamily: "var(--font-heading)" }}
         >
-          A phone receptionist in 60 seconds.
+          A phone receptionist in 30 seconds.
         </h1>
         <p className="text-base text-muted-foreground max-w-xl">
           Paste a Google Maps URL. We&apos;ll read your business, design a custom AI receptionist,

@@ -13,6 +13,7 @@ import {
 } from "./dates";
 import { buildCallerContext } from "./caller-context";
 import { searchBusinessInfo } from "./moss";
+import { sendSms } from "./agentphone";
 
 export type ToolContext = {
   business: Business;
@@ -69,7 +70,7 @@ export function buildTools(ctx: ToolContext, loopState: LoopState) {
 
     book_appointment: tool({
       description:
-        "Book an appointment for the caller. ALWAYS call check_availability first. ALWAYS spell back the caller's name to confirm before calling this. If the system prompt's 'Booking intake' section lists questions, collect ALL of those answers and pass them via the `intakeAnswers` field. Returns a confirmation string.",
+        "Book an appointment for the caller. ALWAYS call check_availability first. ALWAYS spell back the caller's name to confirm before calling this. If the system prompt's 'Booking intake' section lists questions, collect ALL of those answers and pass them via the `intakeAnswers` field. Always provide an `smsBody` so the caller gets a written confirmation by SMS in addition to the verbal one. Returns a confirmation string.",
       inputSchema: z.object({
         startTime: z
           .string()
@@ -84,6 +85,12 @@ export function buildTools(ctx: ToolContext, loopState: LoopState) {
           .record(z.string(), z.string())
           .describe(
             "Answers to the business's intake questions (defined under 'Booking intake' in the system prompt). Keys are the exact question text; values are the caller's verbal answer. Omit if no intake questions are configured.",
+          )
+          .optional(),
+        smsBody: z
+          .string()
+          .describe(
+            "Friendly SMS confirmation to text the caller right after booking. 1-3 short sentences, under 280 chars. MUST include: caller's first name, the business name, the service, the human-readable date/time, and a placeholder {REF} that the server will replace with the booking reference code. Example: \"Hi Sarah, your haircut at Marbella Salon is confirmed for Tue May 23 at 2:00 PM. REF: {REF}. Reply or call us to change.\"",
           )
           .optional(),
       }),
@@ -278,6 +285,7 @@ async function bookAppointment(
   const callerName = typeof input.callerName === "string" ? input.callerName : null;
   const callerEmail = typeof input.callerEmail === "string" ? input.callerEmail : undefined;
   const intakeAnswers = sanitizeIntakeAnswers(input.intakeAnswers);
+  const smsBodyHint = typeof input.smsBody === "string" ? input.smsBody.trim() : "";
 
   if (!startTimeStr || !service || !callerName) {
     return { output: "Missing startTime, service, or callerName. Please collect them and try again." };
@@ -346,8 +354,39 @@ async function bookAppointment(
   );
 
   const readable = formatInBusinessTz(startTime, ctx.business.timezone);
+  const ref = refOf(insertResult.insertedId);
+
+  const smsBody = (() => {
+    const base = smsBodyHint.length > 0
+      ? smsBodyHint.replace(/\{REF\}/g, ref)
+      : `Hi ${callerName.split(" ")[0]}, your ${service} at ${ctx.business.name} is confirmed for ${readable}. REF: ${ref}.`;
+    return base.length > 320 ? base.slice(0, 320) : base;
+  })();
+
+  let smsSent = false;
+  const toNumber = ctx.caller.phone;
+  const agentId = ctx.business.agentPhoneAgentId;
+  if (!agentId) {
+    console.error("[book_appointment] sendSms skipped: business has no agentPhoneAgentId");
+  } else if (!/^\+\d{8,15}$/.test(toNumber)) {
+    console.error(`[book_appointment] sendSms skipped: caller phone not E.164: ${toNumber}`);
+  } else {
+    try {
+      await sendSms({
+        agentId,
+        toNumber,
+        body: smsBody,
+        numberId: ctx.business.agentPhoneNumberId,
+      });
+      smsSent = true;
+    } catch (err) {
+      console.error("[book_appointment] sendSms failed:", err);
+    }
+  }
+
+  const baseConfirmation = `Booked. ${service} for ${callerName} on ${readable}. Reference: ${ref}.`;
   return {
-    output: `Booked. Confirmation: ${service} for ${callerName} on ${readable}. Reference: ${insertResult.insertedId.toString().slice(-6).toUpperCase()}.`,
+    output: smsSent ? `${baseConfirmation} Text confirmation sent.` : baseConfirmation,
     bookingMade: true,
     callerUpdated: callerUpdate,
   };

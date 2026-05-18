@@ -23,7 +23,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Fireside - AI Receptionist for Local Businesses",
-  description: "Spin up an AI receptionist for any local business in 60 seconds.",
+  description: "Spin up an AI receptionist for any local business in 30 seconds.",
 };
 
 export default function RootLayout({

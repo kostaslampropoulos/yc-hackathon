@@ -172,3 +172,18 @@ export async function deleteAgent(agentId: string): Promise<void> {
 export async function listVoices(): Promise<unknown> {
   return apFetch<unknown>("/agents/voices", { method: "GET" });
 }
+
+export async function sendSms(input: {
+  agentId: string;
+  toNumber: string;
+  body: string;
+  numberId?: string;
+}): Promise<{ id?: string }> {
+  const body: Record<string, unknown> = {
+    agent_id: input.agentId,
+    to_number: input.toNumber,
+    body: input.body,
+  };
+  if (input.numberId) body.number_id = input.numberId;
+  return apFetch<{ id?: string }>("/messages", { method: "POST", body });
+}
