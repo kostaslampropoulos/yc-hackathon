@@ -50,9 +50,11 @@ export type Business = {
   agentPhoneNumberId: string;
   agentPhoneNumber: string;
 
-  // AgentMail inbox per business (optional during rollout; older businesses may not have one).
-  agentMailInboxId?: string;
-  agentMailEmail?: string;
+  // AgentMail inbox issued to the business at provisioning. Always set for
+  // newly-provisioned businesses; older docs predating this feature may not
+  // have it yet — use the admin backfill endpoint to populate them.
+  agentMailInboxId: string;
+  agentMailEmail: string;
 
   rawPlaceDetails: object;
   websiteMarkdown: string | null;
@@ -73,6 +75,8 @@ export type BusinessForPrompt = Omit<
   | "agentPhoneAgentId"
   | "agentPhoneNumberId"
   | "agentPhoneNumber"
+  | "agentMailInboxId"
+  | "agentMailEmail"
   | "_id"
   | "createdAt"
   | "updatedAt"

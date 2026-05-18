@@ -182,23 +182,28 @@ export async function POST(req: Request) {
     );
   }
 
-  // Step 6b: AgentMail inbox. Non-fatal: if it fails the business still gets a
-  // voice agent; the inbox can be re-attempted later.
-  let agentMailInboxId: string | undefined;
-  let agentMailEmail: string | undefined;
-  if (process.env.AGENTMAIL_API_KEY) {
-    try {
-      const username = slugForInbox(businessForPrompt.name);
-      const inbox = await createInbox({
-        username,
-        displayName: businessForPrompt.name,
-        clientId: businessForPrompt.placeId,
-      });
-      agentMailInboxId = inbox.inboxId;
-      agentMailEmail = inbox.email;
-    } catch (err) {
-      console.warn(`[provision] AgentMail inbox creation failed for ${businessForPrompt.name}:`, (err as Error).message);
+  // Step 6b: AgentMail inbox — mandatory peer of the phone number. If it fails
+  // we roll back the just-created AgentPhone agent so we don't leave half-
+  // provisioned businesses behind.
+  let agentMailInboxId: string;
+  let agentMailEmail: string;
+  try {
+    const username = slugForInbox(businessForPrompt.name);
+    const inbox = await createInbox({
+      username,
+      displayName: businessForPrompt.name,
+      clientId: businessForPrompt.placeId,
+    });
+    agentMailInboxId = inbox.inboxId;
+    agentMailEmail = inbox.email;
+  } catch (err) {
+    if (agentId) {
+      await deleteAgent(agentId).catch(() => {});
     }
+    return Response.json(
+      { error: `AgentMail inbox creation failed: ${(err as Error).message}` },
+      { status: 500 },
+    );
   }
 
   // Step 7: insert into Mongo
