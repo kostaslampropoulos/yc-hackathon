@@ -50,6 +50,10 @@ export type Business = {
   agentPhoneNumberId: string;
   agentPhoneNumber: string;
 
+  // AgentMail inbox per business (optional during rollout; older businesses may not have one).
+  agentMailInboxId?: string;
+  agentMailEmail?: string;
+
   rawPlaceDetails: object;
   websiteMarkdown: string | null;
 
@@ -80,7 +84,9 @@ export type AgentMessage = StoredContent;
 export type Caller = {
   _id: ObjectId;
   businessId: ObjectId;
-  phone: string;
+  // Phone is the primary identifier for voice-channel callers. Optional so an
+  // email-only customer (who has only ever emailed in) can also be represented.
+  phone?: string;
   callbackPhone?: string;
   name?: string;
   email?: string;
@@ -96,10 +102,15 @@ export type TranscriptEntry = { role: "user" | "assistant"; text: string; ts: Da
 
 export type Conversation = {
   _id: ObjectId;
+  // Opaque conversation key. For voice, this is the AgentPhone call id; for
+  // email, this is the AgentMail thread id.
   callId: string;
+  channel?: "voice" | "email";
+  threadId?: string;
   businessId: ObjectId;
   callerId: ObjectId;
-  callerPhone: string;
+  // For email-channel conversations the caller may not have a phone number.
+  callerPhone?: string;
   toNumber: string;
   messages: AgentMessage[];
   transcript: TranscriptEntry[];
@@ -120,14 +131,15 @@ export type Appointment = {
   callerId: ObjectId;
   conversationId: ObjectId;
   callerName: string;
-  callerPhone: string;
+  // Optional: email-channel callers may not have a phone on file at booking time.
+  callerPhone?: string;
   callerEmail?: string;
   service: string;
   startTime: Date;
   endTime: Date;
   durationMinutes: number;
   status: "booked" | "cancelled";
-  source: "voice";
+  source: "voice" | "email";
   // Answers to Business.intakeQuestions, keyed by the question text the agent asked.
   intakeAnswers?: Record<string, string>;
   createdAt: Date;

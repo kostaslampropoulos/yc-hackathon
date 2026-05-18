@@ -6,12 +6,24 @@ import { scrapeWebsite } from "@/lib/firecrawl";
 import { normalizeHours } from "@/lib/hours";
 import { generateSystemPrompt } from "@/lib/prompt";
 import { createAgent, provisionNumber, attachNumberToAgent, deleteAgent } from "@/lib/agentphone";
+import { createInbox } from "@/lib/agentmail";
 import { getBusinesses } from "@/lib/mongo";
 import { indexBusinessWebsite, isMossConfigured } from "@/lib/moss";
 import type { Business, BusinessForPrompt, TopReview } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+function slugForInbox(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  // Suffix a short timestamp so collisions across two same-named businesses don't fail.
+  const suffix = Date.now().toString(36).slice(-5);
+  return `${slug || "inbox"}-${suffix}`;
+}
 
 function toE164(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -170,6 +182,25 @@ export async function POST(req: Request) {
     );
   }
 
+  // Step 6b: AgentMail inbox. Non-fatal: if it fails the business still gets a
+  // voice agent; the inbox can be re-attempted later.
+  let agentMailInboxId: string | undefined;
+  let agentMailEmail: string | undefined;
+  if (process.env.AGENTMAIL_API_KEY) {
+    try {
+      const username = slugForInbox(businessForPrompt.name);
+      const inbox = await createInbox({
+        username,
+        displayName: businessForPrompt.name,
+        clientId: businessForPrompt.placeId,
+      });
+      agentMailInboxId = inbox.inboxId;
+      agentMailEmail = inbox.email;
+    } catch (err) {
+      console.warn(`[provision] AgentMail inbox creation failed for ${businessForPrompt.name}:`, (err as Error).message);
+    }
+  }
+
   // Step 7: insert into Mongo
   const now = new Date();
   const doc: Omit<Business, "_id"> = {
@@ -180,6 +211,8 @@ export async function POST(req: Request) {
     agentPhoneAgentId: agentId!,
     agentPhoneNumberId: numberId!,
     agentPhoneNumber: phoneNumber!,
+    agentMailInboxId,
+    agentMailEmail,
     createdAt: now,
     updatedAt: now,
   };

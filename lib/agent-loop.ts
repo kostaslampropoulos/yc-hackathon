@@ -18,6 +18,9 @@ export type AgentLoopOptions = {
   timer?: StepTimer;
   /** Optional callback invoked for every streamed text chunk. */
   onTextChunk?: (chunk: string) => void;
+  /** Channel context: voice (default) tunes for short spoken replies; email
+   * adapts the system prompt for written, slightly more structured replies. */
+  channel?: "voice" | "email";
 };
 
 export async function runAgentLoop(
@@ -28,8 +31,8 @@ export async function runAgentLoop(
   db: Db,
   options: AgentLoopOptions = {},
 ): Promise<AgentResult> {
-  const { timer, onTextChunk } = options;
-  const system = composeSystem(business, callerContext);
+  const { timer, onTextChunk, channel = "voice" } = options;
+  const system = composeSystem(business, callerContext, channel);
   const stored = (conversation.messages as StoredContent[]) ?? [];
   const messages = toModelMessages(stored);
 
@@ -84,7 +87,11 @@ export async function runAgentLoop(
   return { text, transfer: loopState.transfer, bookingMade: loopState.bookingMade };
 }
 
-function composeSystem(business: Business, callerContext: string): string {
+function composeSystem(
+  business: Business,
+  callerContext: string,
+  channel: "voice" | "email",
+): string {
   const today = todayInBusinessTz(business.timezone);
   const now = nowInBusinessTz(business.timezone);
 
@@ -99,6 +106,13 @@ ${business.intakeQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")}
 When you call \`book_appointment\`, pass the answers as the \`intakeAnswers\` field, keyed by the question text exactly as written above.`
     : "";
 
+  const channelRider = channel === "email"
+    ? `
+
+## Channel: Email
+You are replying by email, not on a live phone call. Write a concise, plain-text reply — short paragraphs, no markdown formatting, no bullet lists, no signature block. Address the customer by name when known. When booking, cancelling, or modifying, ALWAYS state the appointment date/time and the REF code clearly in the body. If you need information from the customer (e.g. an intake answer), ask politely and wait for their next email — do not assume.`
+    : "";
+
   return `${business.systemPrompt}
 
 ## Current context
@@ -107,5 +121,5 @@ When you call \`book_appointment\`, pass the answers as the \`intakeAnswers\` fi
 - Business timezone: ${business.timezone}
 
 ## About this caller
-${callerContext}${intake}`;
+${callerContext}${intake}${channelRider}`;
 }
